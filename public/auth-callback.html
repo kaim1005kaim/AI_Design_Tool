@@ -95,51 +95,54 @@
         try {
           statusEl.textContent = 'Googleドライブの画像ファイルを取得しています...';
           
-          // Supabaseのエンドポイントと認証キーを取得（親ウィンドウから）
-          const supabaseUrl = localStorage.getItem('supabaseUrl');
-          const supabaseAnonKey = localStorage.getItem('supabaseAnonKey');
+          // Google OAuth認証情報
+          const clientId = '322366365562-82svpp13lp2mhradli5ku4uvn6ikbeen.apps.googleusercontent.com';
+          // 注: セキュリティ上の理由からクライアントシークレットはここに含めず、保存することをお勧めします
+          // 実際の実装では、下記のclientSecretは環境変数などから安全に取得すべきです
+          const clientSecret = 'YOUR_CLIENT_SECRET'; // 本番環境では適切に置き換えてください
+          const redirectUri = 'https://ai-design-tool.netlify.app/auth-callback.html';
           
-          if (!supabaseUrl || !supabaseAnonKey) {
-            throw new Error('Supabase configuration is missing');
-          }
-
-          // Exchange the code for an access token
-          const tokenEndpoint = `${supabaseUrl}/functions/v1/google-token`;
-          const tokenResponse = await fetch(tokenEndpoint, {
+          // コードをトークンと交換
+          const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
             method: 'POST',
             headers: {
-              'Authorization': `Bearer ${supabaseAnonKey}`,
-              'Content-Type': 'application/json'
+              'Content-Type': 'application/x-www-form-urlencoded',
             },
-            body: JSON.stringify({ code })
+            body: new URLSearchParams({
+              code: code,
+              client_id: clientId,
+              client_secret: clientSecret,
+              redirect_uri: redirectUri,
+              grant_type: 'authorization_code'
+            })
           });
 
           if (!tokenResponse.ok) {
             const tokenError = await tokenResponse.json();
-            throw new Error(tokenError.error || 'Failed to exchange code for token');
+            throw new Error(`トークン取得エラー: ${JSON.stringify(tokenError)}`);
           }
 
           const tokenData = await tokenResponse.json();
+          const accessToken = tokenData.access_token;
           
-          // Get files from Google Drive using the access token
-          const filesEndpoint = `${supabaseUrl}/functions/v1/google-files`;
-          const filesResponse = await fetch(filesEndpoint, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${supabaseAnonKey}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ access_token: tokenData.access_token })
-          });
+          // Google Driveの画像ファイルを取得
+          const filesResponse = await fetch(
+            'https://www.googleapis.com/drive/v3/files?q=mimeType contains "image/" and trashed=false&fields=files(id,name,mimeType,parents,thumbnailLink)',
+            {
+              headers: {
+                'Authorization': `Bearer ${accessToken}`
+              }
+            }
+          );
 
           if (!filesResponse.ok) {
             const filesError = await filesResponse.json();
-            throw new Error(filesError.error || 'Failed to fetch files');
+            throw new Error(`ファイル取得エラー: ${JSON.stringify(filesError)}`);
           }
 
           const filesData = await filesResponse.json();
           
-          // Send the files to the parent window
+          // 親ウィンドウにファイル情報を送信
           window.opener.postMessage({
             type: 'GOOGLE_AUTH_SUCCESS',
             files: filesData.files
@@ -148,7 +151,6 @@
           statusEl.textContent = '認証成功！画像ファイルを取得しました。このウィンドウは自動的に閉じます...';
           loaderEl.style.display = 'none';
           
-          // Close the window after a brief delay
           setTimeout(() => window.close(), 2000);
         } catch (error) {
           console.error('Authentication error:', error);
