@@ -458,7 +458,7 @@ function App() {
       <header className="bg-blue-500 text-white p-4">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
           <div className="flex items-center space-x-2">
-            <h1 className="text-xl font-bold">AI ファッションデザイン管理ツール Web版（デモモード）</h1>
+            <h1 className="text-xl font-bold">AI ファッションデザイン管理ツール</h1>
             <p className="text-sm text-blue-100">現在のフォルダ: {currentFolder}</p>
           </div>
           <div className="flex space-x-2">
