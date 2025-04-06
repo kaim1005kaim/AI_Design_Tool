@@ -1,120 +1,129 @@
 <!DOCTYPE html>
 <html lang="ja">
   <head>
-    <!-- 既存のhead部分はそのまま -->
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Google Drive フォルダ選択</title>
     <style>
-      /* 既存のスタイルにファイルリスト用のスタイルを追加 */
-      .file-list {
-        margin-top: 20px;
-        text-align: left;
-        max-height: 300px;
-        overflow-y: auto;
-      }
-      .file-item {
-        background-color: #f4f4f4;
-        margin: 10px 0;
-        padding: 10px;
-        border-radius: 8px;
-      }
+      /* 既存のスタイル */
     </style>
   </head>
   <body>
     <div class="card">
       <div class="loader" id="loader"></div>
-      <h1>Google認証処理中</h1>
-      <p id="status-message">
-        認証情報を処理しています。しばらくお待ちください...
-      </p>
-      <div class="error" id="error-message"></div>
-      <div class="file-list" id="file-list"></div>
+      <h1>Google Drive フォルダ選択</h1>
+      <p id="status-message">認証および準備中...</p>
+      <div id="picker-container"></div>
     </div>
 
+    <script src="https://apis.google.com/js/api.js"></script>
+    <script src="https://accounts.google.com/gsi/client"></script>
     <script>
-      document.addEventListener('DOMContentLoaded', async () => {
+      // Google API Client Library の初期化
+      function initClient() {
+        gapi.load('picker', {
+          callback: onPickerApiLoad
+        });
+      }
+
+      // ピッカーAPIの準備ができたら呼ばれる
+      function onPickerApiLoad() {
+        statusMessage('フォルダ選択の準備が整いました');
+        createPicker();
+      }
+
+      // アクセストークンの取得
+      async function getAccessToken() {
         const params = new URLSearchParams(window.location.search);
         const code = params.get('code');
-        const error = params.get('error');
-        const statusEl = document.getElementById('status-message');
-        const errorEl = document.getElementById('error-message');
-        const loaderEl = document.getElementById('loader');
-        const fileListEl = document.getElementById('file-list');
+        
+        const clientId = '322366365562-82svpp13lp2mhradli5ku4uvn6ikbeen.apps.googleusercontent.com';
+        const clientSecret = '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';
+        const redirectUri = 'https://ai-design-tool.netlify.app/auth-callback.html';
+        
+        const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: new URLSearchParams({
+            code: code,
+            client_id: clientId,
+            client_secret: clientSecret,
+            redirect_uri: redirectUri,
+            grant_type: 'authorization_code'
+          })
+        });
 
-        // 既存のエラーハンドリングコードはそのまま
+        if (!tokenResponse.ok) {
+          throw new Error('トークン取得に失敗しました');
+        }
 
+        const tokenData = await tokenResponse.json();
+        return tokenData.access_token;
+      }
+
+      // ピッカーの作成
+      async function createPicker() {
         try {
-          statusEl.textContent = 'Googleドライブの画像ファイルを取得しています...';
+          const accessToken = await getAccessToken();
           
-          // Google OAuth認証情報
-          const clientId = '322366365562-82svpp13lp2mhradli5ku4uvn6ikbeen.apps.googleusercontent.com';
-          const clientSecret = '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';
-          const redirectUri = 'https://ai-design-tool.netlify.app/auth-callback.html';
-          const folderId = '0AKa2jFlGW1PiUk9PVA'; // 指定のフォルダID
+          const view = new google.picker.View(google.picker.ViewId.FOLDERS);
+          view.setMimeTypes('application/vnd.google-apps.folder');
           
-          // コードをトークンと交換（既存のコード）
-          const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: new URLSearchParams({
-              code: code,
-              client_id: clientId,
-              client_secret: clientSecret,
-              redirect_uri: redirectUri,
-              grant_type: 'authorization_code'
-            })
-          });
+          const picker = new google.picker.PickerBuilder()
+            .enableFeature(google.picker.Feature.NAV_HIDDEN)
+            .setAppId('ai-design-tool')
+            .setOAuthToken(accessToken)
+            .addView(view)
+            .setCallback(pickerCallback)
+            .build();
+          
+          picker.setVisible(true);
+        } catch (error) {
+          statusMessage(`エラー: ${error.message}`);
+          console.error(error);
+        }
+      }
 
-          if (!tokenResponse.ok) {
-            const tokenError = await tokenResponse.json();
-            throw new Error(`トークン取得エラー: ${JSON.stringify(tokenError)}`);
-          }
+      // フォルダ選択のコールバック
+      function pickerCallback(data) {
+        if (data.action === google.picker.Action.PICKED) {
+          const folder = data.docs[0];
+          const folderId = folder.id;
+          const folderName = folder.name;
 
-          const tokenData = await tokenResponse.json();
-          const accessToken = tokenData.access_token;
-          
-          // Google Driveの画像ファイルを取得（フォルダ指定）
-          const filesResponse = await fetch(
-            `https://www.googleapis.com/drive/v3/files?q=mimeType contains "image/" and trashed=false and "${folderId}" in parents&fields=files(id,name,mimeType,parents,thumbnailLink)`,
-            {
-              headers: {
-                'Authorization': `Bearer ${accessToken}`
-              }
-            }
-          );
-
-          if (!filesResponse.ok) {
-            const filesError = await filesResponse.json();
-            throw new Error(`ファイル取得エラー: ${JSON.stringify(filesError)}`);
-          }
-
-          const filesData = await filesResponse.json();
-          
-          // ファイルリストを表示
-          if (filesData.files.length > 0) {
-            statusEl.textContent = `${filesData.files.length}件の画像ファイルが見つかりました`;
-            fileListEl.innerHTML = filesData.files.map(file => `
-              <div class="file-item">
-                <strong>ファイル名:</strong> ${file.name}<br>
-                <strong>MIME Type:</strong> ${file.mimeType}
-              </div>
-            `).join('');
-          } else {
-            statusEl.textContent = '画像ファイルが見つかりませんでした';
-          }
-          
-          // 親ウィンドウにファイル情報を送信
+          // 親ウィンドウにフォルダ情報を送信
           window.opener.postMessage({
-            type: 'GOOGLE_AUTH_SUCCESS',
-            files: filesData.files
+            type: 'GOOGLE_FOLDER_SELECTED',
+            folderId: folderId,
+            folderName: folderName
+          }, '*');
+
+          statusMessage(`フォルダ "${folderName}" が選択されました`);
+          
+          // 少し待ってからウィンドウを閉じる
+          setTimeout(() => window.close(), 2000);
+        } else if (data.action === google.picker.Action.CANCEL) {
+          statusMessage('フォルダ選択がキャンセルされました');
+          window.opener.postMessage({
+            type: 'GOOGLE_FOLDER_CANCELED'
           }, '*');
           
-          loaderEl.style.display = 'none';
-          
-          setTimeout(() => window.close(), 5000);
-        } catch (error) {
-          // 既存のエラーハンドリングコードはそのまま
+          // キャンセル時もウィンドウを閉じる
+          setTimeout(() => window.close(), 2000);
         }
+      }
+
+      // ステータスメッセージの更新
+      function statusMessage(message) {
+        document.getElementById('status-message').textContent = message;
+      }
+
+      // ページ読み込み時に初期化
+      document.addEventListener('DOMContentLoaded', () => {
+        // Google API Client Libraryの読み込み
+        gapi.load('auth', { callback: initClient });
       });
     </script>
   </body>
