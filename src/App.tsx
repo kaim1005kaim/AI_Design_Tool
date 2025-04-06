@@ -266,77 +266,71 @@ function App() {
   const loadImagesFromGoogleDrive = async () => {
     setIsLoading(true);
     try {
-      console.log('Starting Google Drive authentication...');
+      console.log('Starting Google Drive authentication directly...');
       
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-      if (!supabaseUrl || !supabaseAnonKey) {
-        throw new Error('Supabase configuration is missing. Please check your environment variables.');
+      // Google APIのクライアントID
+      const clientId = '322366365562-82svpp13lp2mhradli5ku4uvn6ikbeen.apps.googleusercontent.com';
+      const redirectUri = 'https://ai-design-tool.netlify.app/auth-callback.html';
+      const scope = 'https://www.googleapis.com/auth/drive.metadata.readonly https://www.googleapis.com/auth/drive.photos.readonly';
+      
+      // 認証URLを手動で構築
+      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+        `client_id=${encodeURIComponent(clientId)}` +
+        `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+        `&response_type=code` +
+        `&scope=${encodeURIComponent(scope)}` +
+        `&access_type=offline` +
+        `&prompt=consent`;
+      
+      console.log('Opening auth window with URL:', authUrl);
+      
+      // 認証ウィンドウを開く
+      const authWindow = window.open(
+        authUrl,
+        'Google OAuth',
+        'width=600,height=800,menubar=no,toolbar=no,location=no,status=no'
+      );
+      
+      if (!authWindow) {
+        throw new Error('ポップアップがブロックされました。ポップアップを許可してください。');
       }
 
-      const response = await fetch(`${supabaseUrl}/functions/v1/google-auth`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${supabaseAnonKey}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(`認証エラー: ${errorData.error || response.statusText}`);
-      }
-
-      const data = await response.json();
-      
-      if (data.url) {
-        const authWindow = window.open(
-          data.url,
-          'Google OAuth',
-          'width=600,height=800,menubar=no,toolbar=no,location=no,status=no'
-        );
-        
-        if (!authWindow) {
-          throw new Error('ポップアップがブロックされました。ポップアップを許可してください。');
-        }
-
-        const handleMessage = async (event: MessageEvent) => {
-          if (event.data.type === 'GOOGLE_AUTH_SUCCESS') {
-            window.removeEventListener('message', handleMessage);
-            const files = event.data.files;
-            
-            if (!files || files.length === 0) {
-              throw new Error('画像ファイルが見つかりませんでした');
-            }
-
-            const newDesigns = files.reduce((acc: DesignSet[], file: any, index: number) => {
-              if (index % 4 === 0) {
-                acc.push({
-                  id: `design-${Math.floor(index / 4)}`,
-                  year: extractYearFromPath(file.name),
-                  prompt: extractPromptFromPath(file.name),
-                  hashtags: generateTagsFromPrompt(file.name, extractYearFromPath(file.name)),
-                  description: '',
-                  images: [`https://drive.google.com/uc?id=${file.id}`],
-                  folderPath: file.parents ? file.parents[0] : '',
-                });
-              } else if (acc.length > 0) {
-                acc[acc.length - 1].images.push(`https://drive.google.com/uc?id=${file.id}`);
-              }
-              return acc;
-            }, []);
-
-            setDesigns(newDesigns);
-            setCurrentFolder('Google Drive');
-          } else if (event.data.type === 'GOOGLE_AUTH_ERROR') {
-            console.error('認証エラー:', event.data.error);
-            alert(`認証エラー: ${event.data.error}`);
+      // メッセージハンドリングは既存のコードを使用
+      const handleMessage = async (event: MessageEvent) => {
+        if (event.data.type === 'GOOGLE_AUTH_SUCCESS') {
+          window.removeEventListener('message', handleMessage);
+          const files = event.data.files;
+          
+          if (!files || files.length === 0) {
+            throw new Error('画像ファイルが見つかりませんでした');
           }
-        };
 
-        window.addEventListener('message', handleMessage);
-      }
+          const newDesigns = files.reduce((acc: DesignSet[], file: any, index: number) => {
+            if (index % 4 === 0) {
+              acc.push({
+                id: `design-${Math.floor(index / 4)}`,
+                year: extractYearFromPath(file.name),
+                prompt: extractPromptFromPath(file.name),
+                hashtags: generateTagsFromPrompt(file.name, extractYearFromPath(file.name)),
+                description: '',
+                images: [`https://drive.google.com/uc?id=${file.id}`],
+                folderPath: file.parents ? file.parents[0] : '',
+              });
+            } else if (acc.length > 0) {
+              acc[acc.length - 1].images.push(`https://drive.google.com/uc?id=${file.id}`);
+            }
+            return acc;
+          }, []);
+
+          setDesigns(newDesigns);
+          setCurrentFolder('Google Drive');
+        } else if (event.data.type === 'GOOGLE_AUTH_ERROR') {
+          console.error('認証エラー:', event.data.error);
+          alert(`認証エラー: ${event.data.error}`);
+        }
+      };
+
+      window.addEventListener('message', handleMessage);
     } catch (error) {
       console.error('Google Drive error:', error);
       alert(error instanceof Error ? error.message : 'Google Driveからの読み込み中にエラーが発生しました');
