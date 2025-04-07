@@ -129,10 +129,10 @@
           const tokenResponse = await fetch(tokenUrl, {
             method: 'POST',
             headers: {
-              'Content-Type': 'application/json'
-              'Authorization': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNneWZoa3FieWJ2bGpudnJpcGdzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDM5NTA3NDUsImV4cCI6MjA1OTUyNjc0NX0.RKHcdsrBm0luiYt-dfv7Btp7J2WQfAC29z9p7QnYQLY' // ここにコピーしたanonキーを貼り付け
-          },
-             body: JSON.stringify({ code })
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNneWZoa3FieWJ2bGpudnJpcGdzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDM5NTA3NDUsImV4cCI6MjA1OTUyNjc0NX0.RKHcdsrBm0luiYt-dfv7Btp7J2WQfAC29z9p7QnYQLY'
+            },
+            body: JSON.stringify({ code })
           });
 
           console.log('トークンレスポンス受信:', {

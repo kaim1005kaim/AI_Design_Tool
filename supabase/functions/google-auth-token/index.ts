@@ -23,6 +23,18 @@ serve(async (req) => {
   }
 
   try {
+    // 認証ヘッダーの確認（オプション）
+    const authHeader = req.headers.get('Authorization');
+    console.log('認証ヘッダー:', authHeader);
+    
+    // 認証ヘッダーが必要な場合はここでチェックします
+    // if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    //   return new Response(
+    //     JSON.stringify({ error: '認証されていません' }),
+    //     { status: 401, headers }
+    //   );
+    // }
+    
     // リクエスト情報をログに記録
     console.log('リクエスト情報:', {
       url: req.url,
