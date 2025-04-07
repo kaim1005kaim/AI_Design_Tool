@@ -302,6 +302,25 @@ function App() {
     return `${decade}年代`;
   }))).sort()];
 
+  // 共有ドライブの一覧を取得するメソッド
+  const getSharedDrives = async (accessToken: string) => {
+    try {
+      const response = await fetch(
+        'https://www.googleapis.com/drive/v3/drives?pageSize=50',
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+      
+      if (!response.ok) throw new Error('共有ドライブ一覧の取得に失敗しました');
+      
+      const data = await response.json();
+      console.log('共有ドライブ一覧:', data.drives);
+      return data.drives || [];
+    } catch (error) {
+      console.error('共有ドライブ取得エラー:', error);
+      return [];
+    }
+  };
+
   const loadImagesFromGoogleDrive = async () => {
     setIsLoading(true);
     try {
@@ -310,7 +329,7 @@ function App() {
       // Google APIのクライアントID
       const clientId = '322366365562-82svpp13lp2mhradli5ku4uvn6ikbeen.apps.googleusercontent.com';
       const redirectUri = 'https://ai-design-tool.netlify.app/auth-callback.html';
-      const scope = 'https://www.googleapis.com/auth/drive.metadata.readonly https://www.googleapis.com/auth/drive.photos.readonly';
+      const scope = 'https://www.googleapis.com/auth/drive.metadata.readonly https://www.googleapis.com/auth/drive.photos.readonly https://www.googleapis.com/auth/drive.shared-drives';
       
       // 認証URLを手動で構築
       const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
@@ -341,6 +360,18 @@ function App() {
           const folderId = event.data.folderId;
           const folderName = event.data.folderName;
           const accessToken = event.data.accessToken; // トークンを受け取る
+
+          // ユーザー情報を取得してログ出力
+          const userInfoResponse = await fetch(
+            'https://www.googleapis.com/oauth2/v2/userinfo',
+            { headers: { Authorization: `Bearer ${accessToken}` } }
+          );
+          const userInfo = await userInfoResponse.json();
+          console.log('ユーザー情報:', userInfo);
+
+          // 共有ドライブの一覧を取得
+          const sharedDrives = await getSharedDrives(accessToken);
+          console.log('利用可能な共有ドライブ:', sharedDrives);
           
           console.log(`フォルダが選択されました: ${folderName}（ID: ${folderId}）`);
           setCurrentFolder(`Google Drive: ${folderName}`);
@@ -370,7 +401,7 @@ function App() {
             
             // フォルダ内のファイル一覧を取得
             const response = await fetch(
-              `https://www.googleapis.com/drive/v3/files?q='${folderId}'+in+parents+and+mimeType+contains+'image/'&fields=files(id,name,parents,mimeType)`,
+              `https://www.googleapis.com/drive/v3/files?q='${folderId}'+in+parents+and+mimeType+contains+'image/'&fields=files(id,name,parents,mimeType)&supportsAllDrives=true&includeItemsFromAllDrives=true`,
               { headers: { Authorization: `Bearer ${accessToken}` } }
             );
             
