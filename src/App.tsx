@@ -417,29 +417,64 @@ function App() {
             }
             
             // 画像ファイルを4枚ずつグループ化してDesignSetを作成
-            const newDesigns = files.reduce((acc: DesignSet[], file: any, index: number) => {
-              // 年代とプロンプトを抽出
-              const year = extractYearFromPath(file.name);
-              const prompt = extractPromptFromPath(file.name);
+            const getImageUrl = async (fileId: string, accessToken: string) => {
+              try {
+                // ファイルの詳細情報を取得
+                const response = await fetch(
+                  `https://www.googleapis.com/drive/v3/files/${fileId}?fields=thumbnailLink,webContentLink,webViewLink`,
+                  { 
+                    headers: { 
+                      Authorization: `Bearer ${accessToken}`,
+                      'Content-Type': 'application/json'
+                    } 
+                  }
+                );
+
+                if (!response.ok) {
+                  throw new Error('サムネイル情報の取得に失敗しました');
+                }
+
+                const fileInfo = await response.json();
+                
+                // サムネイルリンクや代替リンクを優先的に使用
+                return fileInfo.thumbnailLink || 
+                       fileInfo.webContentLink || 
+                       fileInfo.webViewLink || 
+                       `https://drive.google.com/uc?id=${fileId}`;
+              } catch (error) {
+                console.error('画像URL取得エラー:', error);
+                return null;
+              }
+            };
+
+            const newDesigns: DesignSet[] = [];
+            for (let i = 0; i < files.length; i += 4) {
+              const groupFiles = files.slice(i, i + 4);
+              const imagePromises = groupFiles.map(file => 
+                getImageUrl(file.id, accessToken)
+              );
               
-              if (index % 4 === 0) {
-                // 新しいグループを作成
-                acc.push({
-                  id: `design-${Math.floor(index / 4)}`,
+              const images = await Promise.all(imagePromises);
+              const validImages = images.filter(img => img !== null);
+              
+              if (validImages.length > 0) {
+                const file = groupFiles[0];
+                const year = extractYearFromPath(file.name);
+                const prompt = extractPromptFromPath(file.name);
+                
+                newDesigns.push({
+                  id: `design-${newDesigns.length}`,
                   year,
                   prompt,
                   hashtags: generateTagsFromPrompt(prompt, year),
                   description: '',
-                  images: [`https://drive.google.com/thumbnail?id=${file.id}&sz=w2000`],
+                  images: validImages,
                   folderPath: folderId,
                 });
-              } else if (acc.length > 0) {
-                // 既存のグループに追加
-                acc[acc.length - 1].images.push(`https://drive.google.com/thumbnail?id=${file.id}&sz=w2000`);
               }
-              return acc;
-            }, []);
-            
+            }
+
+            console.log('読み込まれたデザイン:', newDesigns);
             setDesigns(newDesigns);
             console.log(`${files.length}個の画像ファイルを読み込みました`);
           } catch (error) {
