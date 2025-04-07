@@ -333,29 +333,33 @@ function App() {
           window.removeEventListener('message', handleMessage);
           const folderId = event.data.folderId;
           const folderName = event.data.folderName;
+          const accessToken = event.data.accessToken; // トークンを受け取る
           
           console.log(`フォルダが選択されました: ${folderName}（ID: ${folderId}）`);
           setCurrentFolder(`Google Drive: ${folderName}`);
           
           // 選択されたフォルダ内の画像を取得するAPIを呼び出す
           try {
-            // ここでアクセストークンを取得する処理が必要（実際の実装では安全な方法で行う）
-            const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-              body: new URLSearchParams({
-                code: new URLSearchParams(authWindow.location.search).get('code') || '',
-                client_id: clientId,
-                client_secret: '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', // 本番環境では安全に扱う必要があります
-                redirect_uri: redirectUri,
-                grant_type: 'authorization_code'
-              })
-            });
+            // 既にトークンを受け取っているので再利用
+            // let accessToken = event.data.accessToken; // 先ほど受け取ったトークンを使用
             
-            if (!tokenResponse.ok) throw new Error('トークンの取得に失敗しました');
-            
-            const tokenData = await tokenResponse.json();
-            const accessToken = tokenData.access_token;
+            if (!accessToken) {
+              // トークンが無い場合は、再度APIを呼ぶ
+              // Supabase Edge Functionで取得するように修正
+              const code = new URLSearchParams(authWindow?.location.search).get('code');
+              if (!code) throw new Error('認証コードが見つかりません');
+              
+              const tokenResponse = await fetch('https://sgyfhkqbybvljnvripgs.supabase.co/functions/v1/google-auth-token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ code })
+              });
+              
+              if (!tokenResponse.ok) throw new Error('トークンの取得に失敗しました');
+              
+              const tokenData = await tokenResponse.json();
+              accessToken = tokenData.access_token;
+            }
             
             // フォルダ内のファイル一覧を取得
             const response = await fetch(

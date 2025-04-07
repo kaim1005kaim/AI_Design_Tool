@@ -70,35 +70,40 @@
         createPicker();
       }
 
-      // アクセストークンの取得
+      // アクセストークンの取得（Edge Function経由）
       async function getAccessToken() {
-        const params = new URLSearchParams(window.location.search);
-        const code = params.get('code');
-        
-        const clientId = '322366365562-82svpp13lp2mhradli5ku4uvn6ikbeen.apps.googleusercontent.com';
-        const clientSecret = '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';
-        const redirectUri = 'https://ai-design-tool.netlify.app/auth-callback.html';
-        
-        const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-          body: new URLSearchParams({
-            code: code,
-            client_id: clientId,
-            client_secret: clientSecret,
-            redirect_uri: redirectUri,
-            grant_type: 'authorization_code'
-          })
-        });
+        try {
+          const params = new URLSearchParams(window.location.search);
+          const code = params.get('code');
+          
+          if (!code) {
+            throw new Error('認証コードが見つかりません');
+          }
+          
+          statusMessage('トークンを取得中...');
+          
+          // Supabase Edge Functionを呼び出し
+          const tokenResponse = await fetch('https://sgyfhkqbybvljnvripgs.supabase.co/functions/v1/google-auth-token', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ code })
+          });
 
-        if (!tokenResponse.ok) {
-          throw new Error('トークン取得に失敗しました');
+          if (!tokenResponse.ok) {
+            const errorData = await tokenResponse.text();
+            console.error('トークン取得エラー:', errorData);
+            throw new Error(`トークン取得に失敗しました: ${tokenResponse.status}`);
+          }
+
+          const tokenData = await tokenResponse.json();
+          return tokenData.access_token;
+        } catch (error) {
+          console.error('トークン取得中のエラー:', error);
+          statusMessage(`エラー: ${error.message}`);
+          throw error;
         }
-
-        const tokenData = await tokenResponse.json();
-        return tokenData.access_token;
       }
 
       // ピッカーの作成
@@ -149,11 +154,12 @@
           const folderId = folder.id;
           const folderName = folder.name;
 
-          // 親ウィンドウにフォルダ情報を送信
+          // 親ウィンドウにフォルダ情報とトークンを送信
           window.opener.postMessage({
             type: 'GOOGLE_FOLDER_SELECTED',
             folderId: folderId,
-            folderName: folderName
+            folderName: folderName,
+            accessToken: accessToken // トークンも一緒に送信
           }, '*');
 
           statusMessage(`フォルダ "${folderName}" が選択されました`);
