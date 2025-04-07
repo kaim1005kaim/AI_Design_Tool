@@ -329,7 +329,7 @@ function App() {
       // Google APIのクライアントID
       const clientId = '322366365562-82svpp13lp2mhradli5ku4uvn6ikbeen.apps.googleusercontent.com';
       const redirectUri = 'https://ai-design-tool.netlify.app/auth-callback.html';
-      const scope = 'https://www.googleapis.com/auth/drive.metadata.readonly https://www.googleapis.com/auth/drive.photos.readonly https://www.googleapis.com/auth/drive.shared-drives';
+      const scope = 'https://www.googleapis.com/auth/drive';
       
       // 認証URLを手動で構築
       const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
