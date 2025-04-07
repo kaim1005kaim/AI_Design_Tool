@@ -153,6 +153,13 @@ function DesignModal({
                   src={image}
                   alt={`デザイン ${index + 1}`}
                   className="w-full h-64 object-cover rounded-lg"
+                  onError={(e) => {
+                    // 画像読み込みエラー時の代替表示処理を強化
+                    console.error(`画像の読み込みに失敗: ${image}`);
+                    (e.target as HTMLImageElement).onerror = null;
+                    // プレースホルダー画像を使用
+                    (e.target as HTMLImageElement).src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2YwZjBmMCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LXNpemU9IjIwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkeT0iLjNlbSIgZmlsbD0iIzY2NiI+44Ky44Op44OI44Kq44K544OI44Op44OTPC90ZXh0Pjwvc3ZnPg==';
+                  }}
                 />
               ))
             ) : (
@@ -392,12 +399,12 @@ function App() {
                   prompt,
                   hashtags: generateTagsFromPrompt(prompt, year),
                   description: '',
-                  images: [`https://drive.google.com/uc?id=${file.id}`],
+                  images: [`https://drive.google.com/thumbnail?id=${file.id}&sz=w2000`],
                   folderPath: folderId,
                 });
               } else if (acc.length > 0) {
                 // 既存のグループに追加
-                acc[acc.length - 1].images.push(`https://drive.google.com/uc?id=${file.id}`);
+                acc[acc.length - 1].images.push(`https://drive.google.com/thumbnail?id=${file.id}&sz=w2000`);
               }
               return acc;
             }, []);
@@ -633,8 +640,10 @@ function App() {
                     alt={design.prompt}
                     className="w-full h-48 object-cover"
                     onError={(e) => {
-                      // 画像読み込みエラー時の代替表示
+                      // 画像読み込みエラー時の代替表示処理を強化
+                      console.error(`画像の読み込みに失敗: ${design.images[0]}`);
                       (e.target as HTMLImageElement).onerror = null;
+                      // プレースホルダー画像を使用
                       (e.target as HTMLImageElement).src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2YwZjBmMCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LXNpemU9IjIwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkeT0iLjNlbSIgZmlsbD0iIzY2NiI+44Ky44Op44OI44Kq44K544OI44Op44OTPC90ZXh0Pjwvc3ZnPg==';
                     }}
                   />
