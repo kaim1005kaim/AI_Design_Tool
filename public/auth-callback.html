@@ -31,6 +31,11 @@
         color: #666;
         margin-bottom: 2rem;
       }
+      .error-message {
+        color: #d93025;
+        margin-top: 1rem;
+        font-size: 0.9rem;
+      }
       .loader {
         border: 4px solid #f3f3f3;
         border-top: 4px solid #4285f4;
@@ -44,6 +49,17 @@
         0% { transform: rotate(0deg); }
         100% { transform: rotate(360deg); }
       }
+      pre {
+        background: #f5f5f5;
+        padding: 10px;
+        border-radius: 4px;
+        max-height: 150px;
+        overflow: auto;
+        text-align: left;
+        font-size: 12px;
+        margin-top: 1rem;
+        display: none;
+      }
     </style>
   </head>
   <body>
@@ -51,17 +67,38 @@
       <div class="loader" id="loader"></div>
       <h1>Google Drive フォルダ選択</h1>
       <p id="status-message">認証および準備中...</p>
+      <div id="error-details" class="error-message"></div>
+      <pre id="debug-info"></pre>
       <div id="picker-container"></div>
     </div>
 
     <script src="https://apis.google.com/js/api.js"></script>
     <script src="https://accounts.google.com/gsi/client"></script>
     <script>
+      // デバッグ情報表示用
+      function showDebugInfo(info) {
+        const debugEl = document.getElementById('debug-info');
+        debugEl.textContent += JSON.stringify(info, null, 2) + '\n\n';
+        debugEl.style.display = 'block';
+      }
+
+      // エラー詳細表示用
+      function showError(message) {
+        const errorEl = document.getElementById('error-details');
+        errorEl.textContent = message;
+      }
+
       // Google API Client Library の初期化
       function initClient() {
-        gapi.load('picker', {
-          callback: onPickerApiLoad
-        });
+        try {
+          gapi.load('picker', {
+            callback: onPickerApiLoad
+          });
+        } catch (error) {
+          console.error('APIロードエラー:', error);
+          statusMessage('Google APIのロードに失敗しました');
+          showError(error.message);
+        }
       }
 
       // ピッカーAPIの準備ができたら呼ばれる
@@ -81,27 +118,73 @@
           }
           
           statusMessage('トークンを取得中...');
+          console.log('認証コード:', code.substring(0, 10) + '...');
+          showDebugInfo({ step: 'auth_code_received', codeLength: code.length });
           
           // Supabase Edge Functionを呼び出し
-          const tokenResponse = await fetch('https://sgyfhkqbybvljnvripgs.supabase.co/functions/v1/google-auth-token', {
+          const tokenUrl = 'https://sgyfhkqbybvljnvripgs.supabase.co/functions/v1/google-auth-token';
+          console.log('Edge Functionを呼び出します:', tokenUrl);
+          showDebugInfo({ step: 'calling_edge_function', url: tokenUrl });
+          
+          const tokenResponse = await fetch(tokenUrl, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ code })
+              'Authorization': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNneWZoa3FieWJ2bGpudnJpcGdzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDM5NTA3NDUsImV4cCI6MjA1OTUyNjc0NX0.RKHcdsrBm0luiYt-dfv7Btp7J2WQfAC29z9p7QnYQLY' // ここにコピーしたanonキーを貼り付け
+          },
+             body: JSON.stringify({ code })
+          });
+
+          console.log('トークンレスポンス受信:', {
+            status: tokenResponse.status,
+            statusText: tokenResponse.statusText
+          });
+          showDebugInfo({ 
+            step: 'token_response_received', 
+            status: tokenResponse.status, 
+            statusText: tokenResponse.statusText 
           });
 
           if (!tokenResponse.ok) {
-            const errorData = await tokenResponse.text();
-            console.error('トークン取得エラー:', errorData);
-            throw new Error(`トークン取得に失敗しました: ${tokenResponse.status}`);
+            let errorText = '';
+            try {
+              const errorData = await tokenResponse.json();
+              console.error('トークン取得エラー詳細:', errorData);
+              errorText = JSON.stringify(errorData);
+              showDebugInfo({ step: 'token_error_json', error: errorData });
+            } catch (e) {
+              errorText = await tokenResponse.text();
+              console.error('トークン取得エラーテキスト:', errorText);
+              showDebugInfo({ step: 'token_error_text', error: errorText });
+            }
+            showError(`トークン取得エラー: ${tokenResponse.status} - ${errorText}`);
+            throw new Error(`トークン取得に失敗しました: ${tokenResponse.status} - ${errorText}`);
           }
 
-          const tokenData = await tokenResponse.json();
+          let tokenData;
+          try {
+            tokenData = await tokenResponse.json();
+            showDebugInfo({ step: 'token_parsed', success: true });
+          } catch (parseError) {
+            console.error('レスポンスのJSONパースエラー:', parseError);
+            const rawText = await tokenResponse.text();
+            console.log('生のレスポンス:', rawText);
+            showDebugInfo({ step: 'json_parse_error', rawResponse: rawText });
+            showError('レスポンスの解析に失敗しました');
+            throw new Error('レスポンスの解析に失敗しました');
+          }
+          
+          console.log('トークン取得成功');
+          showDebugInfo({ step: 'token_success', token_type: tokenData.token_type });
+          
+          // グローバル変数に保存（pickerCallback用）
+          window.accessToken = tokenData.access_token;
+          
           return tokenData.access_token;
         } catch (error) {
           console.error('トークン取得中のエラー:', error);
           statusMessage(`エラー: ${error.message}`);
+          showDebugInfo({ step: 'token_error', message: error.message, stack: error.stack });
           throw error;
         }
       }
@@ -110,6 +193,7 @@
       async function createPicker() {
         try {
           const accessToken = await getAccessToken();
+          showDebugInfo({ step: 'creating_picker', token_exists: !!accessToken });
           
           // ルートビューを追加
           const rootView = new google.picker.DocsView(google.picker.ViewId.ROOT)
@@ -140,26 +224,39 @@
             .setCallback(pickerCallback)
             .build();
           
+          showDebugInfo({ step: 'picker_built' });
           picker.setVisible(true);
+          showDebugInfo({ step: 'picker_shown' });
         } catch (error) {
           statusMessage(`エラー: ${error.message}`);
-          console.error(error);
+          showError('Picker作成エラー: ' + error.message);
+          showDebugInfo({ step: 'picker_error', message: error.message, stack: error.stack });
+          console.error('Picker作成エラー:', error);
         }
       }
 
       // フォルダ選択のコールバック
       function pickerCallback(data) {
+        showDebugInfo({ step: 'picker_callback', action: data.action });
+        
         if (data.action === google.picker.Action.PICKED) {
           const folder = data.docs[0];
           const folderId = folder.id;
           const folderName = folder.name;
+          
+          showDebugInfo({ 
+            step: 'folder_picked', 
+            folderId: folderId, 
+            folderName: folderName,
+            hasAccessToken: !!window.accessToken
+          });
 
           // 親ウィンドウにフォルダ情報とトークンを送信
           window.opener.postMessage({
             type: 'GOOGLE_FOLDER_SELECTED',
             folderId: folderId,
             folderName: folderName,
-            accessToken: accessToken // トークンも一緒に送信
+            accessToken: window.accessToken // グローバル変数からトークンを送信
           }, '*');
 
           statusMessage(`フォルダ "${folderName}" が選択されました`);
@@ -168,6 +265,8 @@
           setTimeout(() => window.close(), 2000);
         } else if (data.action === google.picker.Action.CANCEL) {
           statusMessage('フォルダ選択がキャンセルされました');
+          showDebugInfo({ step: 'folder_selection_cancelled' });
+          
           window.opener.postMessage({
             type: 'GOOGLE_FOLDER_CANCELED'
           }, '*');
@@ -184,8 +283,16 @@
 
       // ページ読み込み時に初期化
       document.addEventListener('DOMContentLoaded', () => {
+        showDebugInfo({ step: 'page_loaded', timestamp: new Date().toISOString() });
         // Google API Client Libraryの読み込み
-        gapi.load('auth', { callback: initClient });
+        try {
+          gapi.load('auth', { callback: initClient });
+          showDebugInfo({ step: 'gapi_load_requested' });
+        } catch (error) {
+          console.error('GAPI読み込みエラー:', error);
+          showDebugInfo({ step: 'gapi_load_error', error: error.message });
+          showError('Google APIの読み込みに失敗しました');
+        }
       });
     </script>
   </body>
