@@ -306,18 +306,37 @@ function App() {
   const getSharedDrives = async (accessToken: string) => {
     try {
       const response = await fetch(
-        'https://www.googleapis.com/drive/v3/drives?pageSize=50',
-        { headers: { Authorization: `Bearer ${accessToken}` } }
+        'https://www.googleapis.com/drive/v3/drives?q=name="AI_Design_Images"&fields=drives(id,name,capabilities)', 
+        { 
+          headers: { 
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+          } 
+        }
       );
       
-      if (!response.ok) throw new Error('共有ドライブ一覧の取得に失敗しました');
+      if (!response.ok) {
+        throw new Error(`共有ドライブ取得エラー: ${response.status}`);
+      }
       
       const data = await response.json();
-      console.log('共有ドライブ一覧:', data.drives);
-      return data.drives || [];
+      console.log('AI_Design_Images共有ドライブ検索結果:', data.drives);
+      
+      if (data.drives && data.drives.length > 0) {
+        const targetDrive = data.drives[0];
+        console.log('見つかった共有ドライブ:', {
+          id: targetDrive.id,
+          name: targetDrive.name,
+          capabilities: targetDrive.capabilities
+        });
+        return targetDrive;
+      } else {
+        console.log('指定の名前の共有ドライブが見つかりませんでした');
+        return null;
+      }
     } catch (error) {
-      console.error('共有ドライブ取得エラー:', error);
-      return [];
+      console.error('共有ドライブ取得中のエラー:', error);
+      return null;
     }
   };
 
@@ -329,7 +348,7 @@ function App() {
       // Google APIのクライアントID
       const clientId = '322366365562-82svpp13lp2mhradli5ku4uvn6ikbeen.apps.googleusercontent.com';
       const redirectUri = 'https://ai-design-tool.netlify.app/auth-callback.html';
-      const scope = 'https://www.googleapis.com/auth/drive';
+      const scope = 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.metadata.readonly';
       
       // 認証URLを手動で構築
       const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
