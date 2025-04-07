@@ -68,14 +68,23 @@
         try {
           const accessToken = await getAccessToken();
           
-          const view = new google.picker.View(google.picker.ViewId.FOLDERS);
-          view.setMimeTypes('application/vnd.google-apps.folder');
+          // ドライブのビューを作成
+          const myDriveView = new google.picker.View(google.picker.ViewId.FOLDERS);
+          myDriveView.setMimeTypes('application/vnd.google-apps.folder');
+          
+          // 共有ドライブのビューを作成
+          const sharedDrivesView = new google.picker.DocsView(google.picker.ViewId.SHARED_DRIVES);
+          sharedDrivesView.setIncludeFolders(true);
+          sharedDrivesView.setSelectFolderEnabled(true);
+          sharedDrivesView.setMimeTypes('application/vnd.google-apps.folder');
           
           const picker = new google.picker.PickerBuilder()
             .enableFeature(google.picker.Feature.NAV_HIDDEN)
+            .enableFeature(google.picker.Feature.SUPPORT_DRIVES)
             .setAppId('ai-design-tool')
             .setOAuthToken(accessToken)
-            .addView(view)
+            .addView(myDriveView)
+            .addView(sharedDrivesView)
             .setCallback(pickerCallback)
             .build();
           

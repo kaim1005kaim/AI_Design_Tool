@@ -24,18 +24,32 @@ const placeholderDesigns: DesignSet[] = Array(6).fill(null).map((_, i) => ({
 }));
 
 function extractYearFromPath(path: string): string {
-  const yearMatch = path.match(/\d{4}s/);
+  // ファイル名から年代を抽出する
+  // 2020sのような形式や単に2020のような形式も対応
+  const yearMatch = path.match(/\d{4}s?/);
   return yearMatch ? yearMatch[0] : '不明';
 }
 
 function extractPromptFromPath(path: string): string {
+  // ファイルパスからプロンプト名を抽出
   const parts = path.split(/[/\\]/);
   const fileName = parts[parts.length - 1];
   
-  const match = fileName.match(/\d{4}s_([^_]+)/);
-  if (!match) return fileName;
+  // 年代の後に_で区切られた部分を抽出
+  // 2020s_promptname_1.jpg のような形式を想定
+  const match = fileName.match(/\d{4}s?_([^_]+)/);
+  if (match && match[1]) {
+    return match[1].replace(/_\d+$/, '');
+  }
   
-  return match[1].replace(/_\d+$/, '');
+  // *A*などの特定パターンを含む場合
+  const specialMatch = fileName.match(/\*([A-Z])\*([^_]+)/);
+  if (specialMatch && specialMatch[2]) {
+    return `${specialMatch[1]}-style ${specialMatch[2]}`;
+  }
+  
+  // 上記のパターンに一致しない場合はファイル名をそのまま使用
+  return fileName.replace(/\.[^/.]+$/, ''); // 拡張子を除去
 }
 
 function generateTagsFromPrompt(prompt: string, year: string): string[] {
@@ -74,13 +88,29 @@ function DesignModal({
 
   const handleOpenInExplorer = async () => {
     try {
+      // Google Driveの画像の場合
+      if (design.folderPath && design.images[0].includes('drive.google.com')) {
+        // Google Driveでのフォルダ表示
+        const folderId = design.folderPath;
+        const driveUrl = `https://drive.google.com/drive/folders/${folderId}`;
+        window.open(driveUrl, '_blank');
+        return;
+      }
+      
+      // ローカルファイルの場合
       if (!design.fileHandles || design.fileHandles.length === 0) {
         throw new Error('ファイルハンドルが見つかりません');
       }
 
       const handles = design.fileHandles;
       if ('showInFolder' in handles[0]) {
-        await Promise.all(handles.map(handle => (handle as any).showInFolder()));
+        // File System Access APIのshowInFolder機能を使用
+        // 全てのファイルを選択した状態で表示するため、一つずつ開く
+        for (const handle of handles) {
+          if ('showInFolder' in handle) {
+            await (handle as any).showInFolder();
+          }
+        }
       } else {
         throw new Error('このブラウザではエクスプローラーでの選択機能がサポートされていません');
       }
@@ -94,12 +124,14 @@ function DesignModal({
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
         <div className="p-4 border-b flex justify-between items-center">
-          <h2 className="text-2xl font-bold">{design.prompt}</h2>
+          <h2 className="text-2xl font-bold">
+            <span className="text-blue-500">{design.year}</span> - {design.prompt}
+          </h2>
           <div className="flex items-center space-x-2">
             <button
-              onClick={handleOpenInExplorer}
-              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg flex items-center space-x-2 transition-colors"
-              disabled={!design.fileHandles || design.fileHandles.length === 0}
+            onClick={handleOpenInExplorer}
+            className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg flex items-center space-x-2 transition-colors"
+            disabled={(!design.fileHandles || design.fileHandles.length === 0) && !design.folderPath}
             >
               <FolderSearch size={20} />
               <span>エクスプローラーで選択</span>
@@ -295,36 +327,88 @@ function App() {
         throw new Error('ポップアップがブロックされました。ポップアップを許可してください。');
       }
 
-      // メッセージハンドリングは既存のコードを使用
+      // フォルダ選択のメッセージイベントハンドラを設定
       const handleMessage = async (event: MessageEvent) => {
-        if (event.data.type === 'GOOGLE_AUTH_SUCCESS') {
+        if (event.data.type === 'GOOGLE_FOLDER_SELECTED') {
           window.removeEventListener('message', handleMessage);
-          const files = event.data.files;
+          const folderId = event.data.folderId;
+          const folderName = event.data.folderName;
           
-          if (!files || files.length === 0) {
-            throw new Error('画像ファイルが見つかりませんでした');
-          }
-
-          const newDesigns = files.reduce((acc: DesignSet[], file: any, index: number) => {
-            if (index % 4 === 0) {
-              acc.push({
-                id: `design-${Math.floor(index / 4)}`,
-                year: extractYearFromPath(file.name),
-                prompt: extractPromptFromPath(file.name),
-                hashtags: generateTagsFromPrompt(file.name, extractYearFromPath(file.name)),
-                description: '',
-                images: [`https://drive.google.com/uc?id=${file.id}`],
-                folderPath: file.parents ? file.parents[0] : '',
-              });
-            } else if (acc.length > 0) {
-              acc[acc.length - 1].images.push(`https://drive.google.com/uc?id=${file.id}`);
+          console.log(`フォルダが選択されました: ${folderName}（ID: ${folderId}）`);
+          setCurrentFolder(`Google Drive: ${folderName}`);
+          
+          // 選択されたフォルダ内の画像を取得するAPIを呼び出す
+          try {
+            // ここでアクセストークンを取得する処理が必要（実際の実装では安全な方法で行う）
+            const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+              body: new URLSearchParams({
+                code: new URLSearchParams(authWindow.location.search).get('code') || '',
+                client_id: clientId,
+                client_secret: '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', // 本番環境では安全に扱う必要があります
+                redirect_uri: redirectUri,
+                grant_type: 'authorization_code'
+              })
+            });
+            
+            if (!tokenResponse.ok) throw new Error('トークンの取得に失敗しました');
+            
+            const tokenData = await tokenResponse.json();
+            const accessToken = tokenData.access_token;
+            
+            // フォルダ内のファイル一覧を取得
+            const response = await fetch(
+              `https://www.googleapis.com/drive/v3/files?q='${folderId}'+in+parents+and+mimeType+contains+'image/'&fields=files(id,name,parents,mimeType)`,
+              { headers: { Authorization: `Bearer ${accessToken}` } }
+            );
+            
+            if (!response.ok) throw new Error('ファイル一覧の取得に失敗しました');
+            
+            const data = await response.json();
+            const files = data.files || [];
+            
+            if (files.length === 0) {
+              alert('選択したフォルダ内に画像ファイルが見つかりませんでした');
+              setIsLoading(false);
+              return;
             }
-            return acc;
-          }, []);
-
-          setDesigns(newDesigns);
-          setCurrentFolder('Google Drive');
+            
+            // 画像ファイルを4枚ずつグループ化してDesignSetを作成
+            const newDesigns = files.reduce((acc: DesignSet[], file: any, index: number) => {
+              // 年代とプロンプトを抽出
+              const year = extractYearFromPath(file.name);
+              const prompt = extractPromptFromPath(file.name);
+              
+              if (index % 4 === 0) {
+                // 新しいグループを作成
+                acc.push({
+                  id: `design-${Math.floor(index / 4)}`,
+                  year,
+                  prompt,
+                  hashtags: generateTagsFromPrompt(prompt, year),
+                  description: '',
+                  images: [`https://drive.google.com/uc?id=${file.id}`],
+                  folderPath: folderId,
+                });
+              } else if (acc.length > 0) {
+                // 既存のグループに追加
+                acc[acc.length - 1].images.push(`https://drive.google.com/uc?id=${file.id}`);
+              }
+              return acc;
+            }, []);
+            
+            setDesigns(newDesigns);
+            console.log(`${files.length}個の画像ファイルを読み込みました`);
+          } catch (error) {
+            console.error('Google Drive APIエラー:', error);
+            alert(error instanceof Error ? error.message : 'フォルダ内のファイル取得中にエラーが発生しました');
+          }
+        } else if (event.data.type === 'GOOGLE_FOLDER_CANCELED') {
+          window.removeEventListener('message', handleMessage);
+          console.log('フォルダ選択がキャンセルされました');
         } else if (event.data.type === 'GOOGLE_AUTH_ERROR') {
+          window.removeEventListener('message', handleMessage);
           console.error('認証エラー:', event.data.error);
           alert(`認証エラー: ${event.data.error}`);
         }
@@ -544,6 +628,11 @@ function App() {
                     src={design.images[0]}
                     alt={design.prompt}
                     className="w-full h-48 object-cover"
+                    onError={(e) => {
+                      // 画像読み込みエラー時の代替表示
+                      (e.target as HTMLImageElement).onerror = null;
+                      (e.target as HTMLImageElement).src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2YwZjBmMCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LXNpemU9IjIwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkeT0iLjNlbSIgZmlsbD0iIzY2NiI+44Ky44Op44OI44Kq44K544OI44Op44OTPC90ZXh0Pjwvc3ZnPg==';
+                    }}
                   />
                 ) : (
                   <div className="w-full h-48 bg-gray-100 flex items-center justify-center">
@@ -556,7 +645,9 @@ function App() {
                   <span className="text-sm font-medium text-blue-500">{design.year}</span>
                   <span className="text-sm text-gray-500">4枚組</span>
                 </div>
-                <h3 className="text-lg font-semibold mb-2 line-clamp-1">{design.prompt}</h3>
+                <h3 className="text-lg font-semibold mb-2 line-clamp-1">
+                  <span className="text-blue-500">{design.year}</span> - {design.prompt}
+                </h3>
                 <div className="flex flex-wrap gap-2">
                   {design.hashtags.slice(0, 3).map((tag, index) => (
                     <span
