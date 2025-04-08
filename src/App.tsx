@@ -289,7 +289,7 @@ function DesignModal({
 
 async function refreshAccessToken(refreshToken: string): Promise<string> {
   try {
-    const clientSecret = (import.meta as any).env.VITE_CLIENT_SECRET; // 環境変数から取得
+    const clientSecret = import.meta.env.VITE_CLIENT_SECRET; // 環境変数からクライアントシークレットを取得
     if (!clientSecret) {
       throw new Error('クライアントシークレットが設定されていません');
     }
@@ -309,17 +309,43 @@ async function refreshAccessToken(refreshToken: string): Promise<string> {
 
     if (!response.ok) {
       const errorData = await response.json();
-      console.error('アクセストークンのリフレッシュエラー:', errorData);
-      throw new Error('アクセストークンのリフレッシュに失敗しました');
+      console.error('アクセストークンのリフレッシュに失敗しました:', errorData);
+      throw new Error(errorData.error_description || 'アクセストークンのリフレッシュに失敗しました');
     }
 
     const data = await response.json();
     console.log('新しいアクセストークンを取得しました:', data.access_token);
+
+    // リフレッシュトークンを保存
+    if (data.refresh_token) {
+      localStorage.setItem('refreshToken', data.refresh_token);
+    }
+
+    // アクセストークンと有効期限を保存
+    localStorage.setItem('accessToken', data.access_token);
+    localStorage.setItem('accessTokenExpiry', (Date.now() + data.expires_in * 1000).toString());
+
     return data.access_token;
   } catch (error) {
     console.error('アクセストークンのリフレッシュ中にエラーが発生しました:', error);
     throw error;
   }
+}
+
+async function getValidAccessToken(): Promise<string> {
+  const accessToken = localStorage.getItem('accessToken');
+  const expiry = localStorage.getItem('accessTokenExpiry');
+
+  if (accessToken && expiry && Date.now() < parseInt(expiry)) {
+    return accessToken; // 有効期限内のアクセストークンを返す
+  }
+
+  const refreshToken = localStorage.getItem('refreshToken');
+  if (!refreshToken) {
+    throw new Error('リフレッシュトークンが見つかりません');
+  }
+
+  return await refreshAccessToken(refreshToken); // リフレッシュトークンを使用して新しいアクセストークンを取得
 }
 
 function App() {
@@ -399,6 +425,7 @@ function App() {
   const loadImagesFromGoogleDrive = async () => {
     setIsLoading(true);
     try {
+      const accessToken = await getValidAccessToken(); // 有効なアクセストークンを取得
       console.log('Starting Google Drive authentication directly...');
       
       // Google APIのクライアントID
@@ -556,7 +583,6 @@ function App() {
           window.removeEventListener('message', handleMessage);
           console.error('認証エラー:', event?.data?.error);
           alert(`認証エラー: ${event?.data?.error}`);
-          return;
         }
       };
 
@@ -666,19 +692,12 @@ function App() {
       design.id === id ? { ...design, lastSaved: new Date() } : design
     ));
     setSavedStatus(prev => ({ ...prev, [id]: true }));
-    
-    setTimeout(() => {
-      setSavedStatus(prev => ({ ...prev, [id]: false }));
-    }, 3000);
   };
 
-  const handleAddTag = (id: string, tag: string) => {
-    const sanitizedTag = tag.trim().toLowerCase();
-    if (!sanitizedTag) return;
+  const handleAddTag = (id: string, newTag: string) => {
+    if (!newTag.trim()) return;
     setDesigns(designs.map(design =>
-      design.id === id
-        ? { ...design, hashtags: [...new Set([...design.hashtags, sanitizedTag])] }
-        : design
+      design.id === id ? { ...design, hashtags: [...design.hashtags, newTag.trim()] } : design
     ));
   };
 
@@ -783,6 +802,7 @@ function App() {
           design={selectedDesign}
           onClose={() => setSelectedDesign(null)}
           onDescriptionEdit={handleDescriptionEdit}
+          onSaveDescription={handleSaveDescription}
           onAddTag={handleAddTag}
           onRemoveTag={handleRemoveTag}
           savedStatus={savedStatus}
