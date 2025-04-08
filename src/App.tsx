@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Search, Grid2X2, List, FolderOpen, RefreshCw, Plus, X, Save, Image as ImageIcon, X as CloseIcon, FolderSearch } from 'lucide-react';
+/// <reference types="react" />
+import React, { useState, useEffect, useMemo } from 'react';
+import { Search, Grid2X2, List, FolderOpen, RefreshCw, Plus, X, Save, Image as ImageIcon, FolderSearch } from 'lucide-react';
 
 interface DesignSet {
   id: string;
@@ -13,7 +14,7 @@ interface DesignSet {
   fileHandles?: FileSystemFileHandle[];
 }
 
-const placeholderDesigns: DesignSet[] = Array(6).fill(null).map((_, i) => ({
+const placeholderDesigns: DesignSet[] = Array.from({ length: 6 }, (_, i) => ({
   id: `placeholder-${i}`,
   year: '----',
   prompt: 'デザインのタイトル',
@@ -24,9 +25,8 @@ const placeholderDesigns: DesignSet[] = Array(6).fill(null).map((_, i) => ({
 }));
 
 function extractYearFromPath(path: string): string {
-  // ファイル名から年代を抽出する
-  // 2020sのような形式や単に2020のような形式も対応
-  const yearMatch = path.match(/\d{4}s?/);
+  // ファイル名から1800-2030の範囲の年代を抽出
+  const yearMatch = path.match(/\b(18[0-9]{2}|19[0-9]{2}|20[0-2][0-9]|2030)\b/);
   return yearMatch ? yearMatch[0] : '不明';
 }
 
@@ -34,35 +34,29 @@ function extractPromptFromPath(path: string): string {
   // ファイルパスからプロンプト名を抽出
   const parts = path.split(/[/\\]/);
   const fileName = parts[parts.length - 1];
-  
-  // 年代の後に_で区切られた部分を抽出
-  // 2020s_promptname_1.jpg のような形式を想定
-  const match = fileName.match(/\d{4}s?_([^_]+)/);
-  if (match && match[1]) {
-    return match[1].replace(/_\d+$/, '');
+
+  // 年代の後に続く部分を抽出
+  const match = fileName.match(/\b(18[0-9]{2}|19[0-9]{2}|20[0-2][0-9]|2030)_(.+?)_/);
+  if (match && match[2]) {
+    return match[2].replace(/_/g, ' '); // アンダースコアをスペースに置換
   }
-  
-  // *A*などの特定パターンを含む場合
-  const specialMatch = fileName.match(/\*([A-Z])\*([^_]+)/);
-  if (specialMatch && specialMatch[2]) {
-    return `${specialMatch[1]}-style ${specialMatch[2]}`;
-  }
-  
+
   // 上記のパターンに一致しない場合はファイル名をそのまま使用
   return fileName.replace(/\.[^/.]+$/, ''); // 拡張子を除去
 }
 
 function generateTagsFromPrompt(prompt: string, year: string): string[] {
-  const tags = new Set<string>();
+  const tags: string[] = [];
   
   if (year !== '不明') {
-    tags.add(year);
-    tags.add('vintage');
+    if (!tags.includes(year)) tags.push(year);
+    if (!tags.includes('vintage')) tags.push('vintage');
   }
 
-  tags.add(prompt.toLowerCase());
+  const promptTag = prompt.toLowerCase();
+  if (!tags.includes(promptTag)) tags.push(promptTag);
 
-  return Array.from(tags);
+  return tags;
 }
 
 interface DesignModalProps {
@@ -84,28 +78,27 @@ function DesignModal({
   onRemoveTag,
   savedStatus
 }: DesignModalProps) {
+  if (!design) {
+    return null; // Return null if design is null or undefined
+  }
   const [newTag, setNewTag] = useState('');
 
   const handleOpenInExplorer = async () => {
     try {
       // Google Driveの画像の場合
       if (design.folderPath && design.images[0].includes('drive.google.com')) {
-        // Google Driveでのフォルダ表示
         const folderId = design.folderPath;
         const driveUrl = `https://drive.google.com/drive/folders/${folderId}`;
         window.open(driveUrl, '_blank');
         return;
       }
-      
-      // ローカルファイルの場合
-      if (!design.fileHandles || design.fileHandles.length === 0) {
-        throw new Error('ファイルハンドルが見つかりません');
+  
+      if ((!design.fileHandles || design.fileHandles.length === 0) && !design.folderPath) {
+        throw new Error('ファイルハンドルまたはフォルダパスが見つかりません');
       }
-
+  
       const handles = design.fileHandles;
-      if ('showInFolder' in handles[0]) {
-        // File System Access APIのshowInFolder機能を使用
-        // 全てのファイルを選択した状態で表示するため、一つずつ開く
+      if (handles && 'showInFolder' in handles[0]) {
         for (const handle of handles) {
           if ('showInFolder' in handle) {
             await (handle as any).showInFolder();
@@ -120,8 +113,32 @@ function DesignModal({
     }
   };
 
+  const getImageUrl = async (fileId: string, accessToken: string) => {
+    try {
+      const response = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${fileId}?fields=thumbnailLink,webContentLink,webViewLink`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch image URL');
+      }
+
+      const fileInfo = await response.json();
+      return fileInfo.thumbnailLink || fileInfo.webContentLink || fileInfo.webViewLink || `https://drive.google.com/uc?id=${fileId}`;
+    } catch (error) {
+      console.error('Error fetching image URL:', error);
+      return 'https://via.placeholder.com/200?text=Image+Unavailable';
+    }
+  };
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true">
       <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
         <div className="p-4 border-b flex justify-between items-center">
           <h2 className="text-2xl font-bold">
@@ -140,7 +157,7 @@ function DesignModal({
               onClick={onClose}
               className="p-2 hover:bg-gray-100 rounded-full"
             >
-              <CloseIcon size={24} />
+              <X size={24} />
             </button>
           </div>
         </div>
@@ -153,12 +170,15 @@ function DesignModal({
                   src={image}
                   alt={`デザイン ${index + 1}`}
                   className="w-full h-64 object-cover rounded-lg"
-                  onError={(e) => {
+                  onError={(e: React.SyntheticEvent<HTMLImageElement, Event>) => {
                     // 画像読み込みエラー時の代替表示処理を強化
                     console.error(`画像の読み込みに失敗: ${image}`);
                     (e.target as HTMLImageElement).onerror = null;
                     // プレースホルダー画像を使用
                     (e.target as HTMLImageElement).src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2YwZjBmMCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LXNpemU9IjIwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkeT0iLjNlbSIgZmlsbD0iIzY2NiI+44Ky44Op44OI44Kq44K544OI44Op44OTPC90ZXh0Pjwvc3ZnPg==';
+                    (e.target as HTMLImageElement).onerror = () => {
+                      (e.target as HTMLImageElement).src = 'https://via.placeholder.com/200?text=Image+Unavailable';
+                    };
                   }}
                 />
               ))
@@ -191,7 +211,7 @@ function DesignModal({
                 <textarea
                   className="w-full p-3 border rounded-lg text-sm pr-10 min-h-[100px]"
                   value={design.description}
-                  onChange={(e) => onDescriptionEdit(design.id, e.target.value)}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => onDescriptionEdit(design.id, e.target.value)}
                   placeholder="説明を入力..."
                   disabled={design.id.startsWith('placeholder-')}
                 />
@@ -240,7 +260,7 @@ function DesignModal({
                       className="flex-1 px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                       value={newTag}
                       onChange={(e) => setNewTag(e.target.value)}
-                      onKeyPress={(e) => {
+                      onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
                         if (e.key === 'Enter') {
                           onAddTag(design.id, newTag);
                           setNewTag('');
@@ -282,26 +302,27 @@ function App() {
     if (savedDesigns) {
       setDesigns(JSON.parse(savedDesigns));
     }
-
+  
     // Supabase認証情報をローカルストレージに保存
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    const supabaseUrl = (import.meta as any).env.VITE_SUPABASE_URL;
+    const supabaseAnonKey = (import.meta as any).env.VITE_SUPABASE_ANON_KEY;
     
     localStorage.setItem('supabaseUrl', supabaseUrl);
     localStorage.setItem('supabaseAnonKey', supabaseAnonKey);
   }, []);
-
   useEffect(() => {
-    localStorage.setItem('designs', JSON.stringify(designs));
+    try {
+      localStorage.setItem('designs', JSON.stringify(designs));
+    } catch (error) {
+      console.error('Error serializing designs:', error);
+    }
   }, [designs]);
-
   const years = ['全年代', ...Array.from(new Set(designs.map(design => {
     const year = parseInt(design.year);
-    if (isNaN(year)) return design.year;
+    if (isNaN(year) || !/^\d{4}s?$/.test(design.year)) return '不明';
     const decade = Math.floor(year / 10) * 10;
     return `${decade}年代`;
-  }))).sort()];
-
+  }))).sort((a, b) => a.localeCompare(b))];
   // 共有ドライブの一覧を取得するメソッド
   const getSharedDrives = async (accessToken: string) => {
     try {
@@ -375,6 +396,7 @@ function App() {
       // フォルダ選択のメッセージイベントハンドラを設定
       const handleMessage = async (event: MessageEvent) => {
         if (event.data.type === 'GOOGLE_FOLDER_SELECTED') {
+          clearTimeout(authTimeout);
           window.removeEventListener('message', handleMessage);
           const folderId = event.data.folderId;
           const folderName = event.data.folderName;
@@ -435,7 +457,6 @@ function App() {
               return;
             }
             
-            // 画像ファイルを4枚ずつグループ化してDesignSetを作成
             const getImageUrl = async (fileId: string, accessToken: string) => {
               try {
                 // ファイルの詳細情報を取得
@@ -448,11 +469,11 @@ function App() {
                     } 
                   }
                 );
-
+            
                 if (!response.ok) {
                   throw new Error('サムネイル情報の取得に失敗しました');
                 }
-
+            
                 const fileInfo = await response.json();
                 
                 // サムネイルリンクや代替リンクを優先的に使用
@@ -462,25 +483,24 @@ function App() {
                        `https://drive.google.com/uc?id=${fileId}`;
               } catch (error) {
                 console.error('画像URL取得エラー:', error);
-                return null;
+                // Fallback to a placeholder image URL
+                return 'https://via.placeholder.com/200?text=Image+Unavailable';
               }
             };
 
             const newDesigns: DesignSet[] = [];
             for (let i = 0; i < files.length; i += 4) {
               const groupFiles = files.slice(i, i + 4);
-              const imagePromises = groupFiles.map(file => 
-                getImageUrl(file.id, accessToken)
+              const images = await Promise.all(
+                groupFiles.map((file) => getImageUrl(file.id, accessToken))
               );
-              
-              const images = await Promise.all(imagePromises);
-              const validImages = images.filter(img => img !== null);
-              
+
+              const validImages = images.filter((img) => img !== null);
               if (validImages.length > 0) {
                 const file = groupFiles[0];
                 const year = extractYearFromPath(file.name);
                 const prompt = extractPromptFromPath(file.name);
-                
+
                 newDesigns.push({
                   id: `design-${newDesigns.length}`,
                   year,
@@ -500,17 +520,25 @@ function App() {
             console.error('Google Drive APIエラー:', error);
             alert(error instanceof Error ? error.message : 'フォルダ内のファイル取得中にエラーが発生しました');
           }
-        } else if (event.data.type === 'GOOGLE_FOLDER_CANCELED') {
+        } else if (event?.data?.type === 'GOOGLE_FOLDER_CANCELED') {
           window.removeEventListener('message', handleMessage);
           console.log('フォルダ選択がキャンセルされました');
-        } else if (event.data.type === 'GOOGLE_AUTH_ERROR') {
+        } else if (event?.data?.type === 'GOOGLE_AUTH_ERROR') {
           window.removeEventListener('message', handleMessage);
-          console.error('認証エラー:', event.data.error);
-          alert(`認証エラー: ${event.data.error}`);
+          console.error('認証エラー:', event?.data?.error);
+          alert(`認証エラー: ${event?.data?.error}`);
         }
       };
 
       window.addEventListener('message', handleMessage);
+
+      // Add a timeout to handle cases where the user closes the auth window
+      const authTimeout = setTimeout(() => {
+        if (authWindow && !authWindow.closed) {
+          authWindow.close();
+          alert('認証がタイムアウトしました。もう一度お試しください。');
+        }
+      }, 60000); // Timeout after 60 seconds
     } catch (error) {
       console.error('Google Drive error:', error);
       alert(error instanceof Error ? error.message : 'Google Driveからの読み込み中にエラーが発生しました');
@@ -529,12 +557,12 @@ function App() {
         throw new Error('お使いのブラウザはフォルダ選択をサポートしていません。');
       }
 
-      const handle = await window.showDirectoryPicker();
+      const handle = await (window as any).showDirectoryPicker();
       const files: string[] = [];
       const fileHandles: FileSystemFileHandle[] = [];
       
       async function* getFilesRecursively(dirHandle: FileSystemDirectoryHandle): AsyncGenerator<[string, FileSystemFileHandle]> {
-        for await (const entry of dirHandle.values()) {
+        for await (const entry of (dirHandle as any).values()) {
           if (entry.kind === 'file') {
             if (entry.name.toLowerCase().match(/\.(png|jpg|jpeg)$/)) {
               const file = await entry.getFile();
@@ -581,19 +609,20 @@ function App() {
       alert(error instanceof Error ? error.message : 'フォルダの読み込み中にエラーが発生しました。');
     }
   };
-
-  const filteredDesigns = designs.filter(design => {
-    const matchesSearch = design.prompt.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      design.hashtags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()));
-    
-    if (selectedYear === '全年代') return matchesSearch;
-    
-    const designYear = parseInt(design.year);
-    if (isNaN(designYear)) return matchesSearch && design.year === selectedYear;
-    
-    const designDecade = Math.floor(designYear / 10) * 10;
-    return matchesSearch && `${designDecade}年代` === selectedYear;
-  });
+  const filteredDesigns = useMemo(() => {
+    return designs.filter(design => {
+      const matchesSearch = design.prompt.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        design.hashtags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()));
+      
+      if (selectedYear === '全年代') return matchesSearch;
+      
+      const designYear = parseInt(design.year);
+      if (isNaN(designYear)) return matchesSearch && design.year === selectedYear;
+      
+      const designDecade = Math.floor(designYear / 10) * 10;
+      return matchesSearch && `${designDecade}年代` === selectedYear;
+    });
+  }, [designs, searchTerm, selectedYear]);
 
   const handleDescriptionEdit = (id: string, newDescription: string) => {
     setDesigns(designs.map(design =>
@@ -614,10 +643,11 @@ function App() {
   };
 
   const handleAddTag = (id: string, tag: string) => {
-    if (!tag.trim()) return;
+    const sanitizedTag = tag.trim().toLowerCase();
+    if (!sanitizedTag) return;
     setDesigns(designs.map(design =>
       design.id === id
-        ? { ...design, hashtags: [...new Set([...design.hashtags, tag.trim()])] }
+        ? { ...design, hashtags: [...new Set([...design.hashtags, sanitizedTag])] }
         : design
     ));
   };
@@ -713,56 +743,7 @@ function App() {
 
         <div className={`grid ${viewMode === 'grid' ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6' : 'grid-cols-1 gap-4'}`}>
           {displayDesigns.map(design => (
-            <div
-              key={design.id}
-              className="bg-white rounded-lg shadow-md overflow-hidden cursor-pointer transform transition-transform hover:scale-[1.02]"
-              onClick={() => setSelectedDesign(design)}
-            >
-              <div className="aspect-w-16 aspect-h-9 relative">
-                {design.images.length > 0 ? (
-                  <img
-                    src={design.images[0]}
-                    alt={design.prompt}
-                    className="w-full h-48 object-cover"
-                    onError={(e) => {
-                      // 画像読み込みエラー時の代替表示処理を強化
-                      console.error(`画像の読み込みに失敗: ${design.images[0]}`);
-                      (e.target as HTMLImageElement).onerror = null;
-                      // プレースホルダー画像を使用
-                      (e.target as HTMLImageElement).src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2YwZjBmMCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LXNpemU9IjIwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkeT0iLjNlbSIgZmlsbD0iIzY2NiI+44Ky44Op44OI44Kq44K544OI44Op44OTPC90ZXh0Pjwvc3ZnPg==';
-                    }}
-                  />
-                ) : (
-                  <div className="w-full h-48 bg-gray-100 flex items-center justify-center">
-                    <ImageIcon size={32} className="text-gray-400" />
-                  </div>
-                )}
-              </div>
-              <div className="p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-blue-500">{design.year}</span>
-                  <span className="text-sm text-gray-500">4枚組</span>
-                </div>
-                <h3 className="text-lg font-semibold mb-2 line-clamp-1">
-                  <span className="text-blue-500">{design.year}</span> - {design.prompt}
-                </h3>
-                <div className="flex flex-wrap gap-2">
-                  {design.hashtags.slice(0, 3).map((tag, index) => (
-                    <span
-                      key={index}
-                      className="px-2 py-1 bg-gray-100 rounded-full text-sm text-gray-600"
-                    >
-                      #{tag}
-                    </span>
-                  ))}
-                  {design.hashtags.length > 3 && (
-                    <span className="px-2 py-1 bg-gray-100 rounded-full text-sm text-gray-600">
-                      +{design.hashtags.length - 3}
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
+            <DesignCard key={design.id} design={design} onSelect={setSelectedDesign} />
           ))}
         </div>
       </div>
@@ -771,7 +752,6 @@ function App() {
         <DesignModal
           design={selectedDesign}
           onClose={() => setSelectedDesign(null)}
-          onSaveDescription={handleSaveDescription}
           onDescriptionEdit={handleDescriptionEdit}
           onAddTag={handleAddTag}
           onRemoveTag={handleRemoveTag}
@@ -781,5 +761,55 @@ function App() {
     </div>
   );
 }
+
+const DesignCard = ({ design, onSelect }: { design: DesignSet; onSelect: (design: DesignSet) => void }) => (
+  <div
+    className="bg-white rounded-lg shadow-md overflow-hidden cursor-pointer transform transition-transform hover:scale-[1.02]"
+    onClick={() => onSelect(design)}
+  >
+    <div className="aspect-w-16 aspect-h-9 relative">
+      {design.images.length > 0 ? (
+        <img
+          src={design.images[0]} // 最初の1枚をサムネイルとして表示
+          alt={design.prompt}
+          className="w-full h-48 object-cover"
+          onError={(e) => {
+            console.error(`画像の読み込みに失敗: ${design.images[0]}`);
+            (e.target as HTMLImageElement).onerror = null;
+            (e.target as HTMLImageElement).src = 'https://via.placeholder.com/200?text=Image+Unavailable';
+          }}
+        />
+      ) : (
+        <div className="w-full h-48 bg-gray-100 flex items-center justify-center">
+          <ImageIcon size={32} className="text-gray-400" />
+        </div>
+      )}
+    </div>
+    <div className="p-4">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-sm font-medium text-blue-500">{design.year}</span>
+        <span className="text-sm text-gray-500">4枚組</span>
+      </div>
+      <h3 className="text-lg font-semibold mb-2 line-clamp-1">
+        {design.year} - {design.prompt}
+      </h3>
+      <div className="flex flex-wrap gap-2">
+        {design.hashtags.slice(0, 3).map((tag, index) => (
+          <span
+            key={index}
+            className="px-2 py-1 bg-gray-100 rounded-full text-sm text-gray-600"
+          >
+            #{tag}
+          </span>
+        ))}
+        {design.hashtags.length > 3 && (
+          <span className="px-2 py-1 bg-gray-100 rounded-full text-sm text-gray-600">
+            +{design.hashtags.length - 3}
+          </span>
+        )}
+      </div>
+    </div>
+  </div>
+);
 
 export default App;
