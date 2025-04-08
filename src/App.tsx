@@ -772,7 +772,7 @@ const DesignCard = ({ design, onSelect }: { design: DesignSet; onSelect: (design
         <img
           src={design.images[0]} // 最初の1枚をサムネイルとして表示
           alt={design.prompt}
-          className="w-full h-48 object-cover"
+          className="w-full h-48 object-contain" // トリミングせず全体を表示
           onError={(e) => {
             console.error(`画像の読み込みに失敗: ${design.images[0]}`);
             (e.target as HTMLImageElement).onerror = null;
@@ -791,7 +791,7 @@ const DesignCard = ({ design, onSelect }: { design: DesignSet; onSelect: (design
         <span className="text-sm text-gray-500">4枚組</span>
       </div>
       <h3 className="text-lg font-semibold mb-2 line-clamp-1">
-        {design.year} - {design.prompt}
+        {design.prompt} {/* タイトルを正しく表示 */}
       </h3>
       <div className="flex flex-wrap gap-2">
         {design.hashtags.slice(0, 3).map((tag, index) => (
