@@ -315,10 +315,15 @@ async function refreshAccessToken(refreshToken: string): Promise<string> {
 
     const data = await response.json();
     console.log('新しいアクセストークンを取得しました:', data.access_token);
+    console.log('リフレッシュトークン:', data.refresh_token); // デバッグ用ログ
 
     // リフレッシュトークンを保存
     if (data.refresh_token) {
-      localStorage.setItem('refreshToken', data.refresh_token);
+      try {
+        localStorage.setItem('refreshToken', data.refresh_token);
+      } catch (error) {
+        console.error('リフレッシュトークンの保存中にエラーが発生しました:', error);
+      }
     }
 
     // アクセストークンと有効期限を保存
