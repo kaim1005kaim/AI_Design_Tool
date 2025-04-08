@@ -25,20 +25,20 @@ const placeholderDesigns: DesignSet[] = Array.from({ length: 6 }, (_, i) => ({
 }));
 
 function extractYearFromPath(path: string): string {
-  // ファイル名から1800-2030の範囲の年代を抽出
-  const yearMatch = path.match(/\b(18[0-9]{2}|19[0-9]{2}|20[0-2][0-9]|2030)\b/);
+  // ファイル名から1800s-2030sの範囲の年代を抽出
+  const yearMatch = path.match(/\b(18[0-9]{2}s|19[0-9]{2}s|20[0-2][0-9]s|2030s)\b/);
   return yearMatch ? yearMatch[0] : '不明';
 }
 
 function extractPromptFromPath(path: string): string {
-  // ファイルパスからプロンプト名を抽出
+  // ファイルパスから「[年代]s_[特徴]_[デザイナー]」を抽出
   const parts = path.split(/[/\\]/);
   const fileName = parts[parts.length - 1];
 
-  // 年代の後に続く部分を抽出
-  const match = fileName.match(/\b(18[0-9]{2}|19[0-9]{2}|20[0-2][0-9]|2030)_(.+?)_/);
-  if (match && match[2]) {
-    return match[2].replace(/_/g, ' '); // アンダースコアをスペースに置換
+  // 正規表現で「[年代]s_[特徴]_[デザイナー]」を抽出
+  const match = fileName.match(/\b(18[0-9]{2}s|19[0-9]{2}s|20[0-2][0-9]s|2030s)_([^_]+)_([^_]+)/);
+  if (match && match[1] && match[2] && match[3]) {
+    return `${match[1]} - ${match[2]} by ${match[3]}`; // タイトル形式に整形
   }
 
   // 上記のパターンに一致しない場合はファイル名をそのまま使用
