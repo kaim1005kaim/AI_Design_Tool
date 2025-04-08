@@ -289,6 +289,11 @@ function DesignModal({
 
 async function refreshAccessToken(refreshToken: string): Promise<string> {
   try {
+    const clientSecret = (import.meta as any).env.VITE_CLIENT_SECRET; // 環境変数から取得
+    if (!clientSecret) {
+      throw new Error('クライアントシークレットが設定されていません');
+    }
+
     const response = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: {
@@ -296,13 +301,15 @@ async function refreshAccessToken(refreshToken: string): Promise<string> {
       },
       body: new URLSearchParams({
         client_id: '322366365562-82svpp13lp2mhradli5ku4uvn6ikbeen.apps.googleusercontent.com',
-        client_secret: 'YOUR_CLIENT_SECRET', // クライアントシークレットを設定してください
+        client_secret: clientSecret,
         refresh_token: refreshToken,
         grant_type: 'refresh_token',
       }).toString(),
     });
 
     if (!response.ok) {
+      const errorData = await response.json();
+      console.error('アクセストークンのリフレッシュエラー:', errorData);
       throw new Error('アクセストークンのリフレッシュに失敗しました');
     }
 
@@ -549,6 +556,7 @@ function App() {
           window.removeEventListener('message', handleMessage);
           console.error('認証エラー:', event?.data?.error);
           alert(`認証エラー: ${event?.data?.error}`);
+          return;
         }
       };
 
