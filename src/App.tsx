@@ -287,6 +287,34 @@ function DesignModal({
   );
 }
 
+async function refreshAccessToken(refreshToken: string): Promise<string> {
+  try {
+    const response = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        client_id: '322366365562-82svpp13lp2mhradli5ku4uvn6ikbeen.apps.googleusercontent.com',
+        client_secret: 'YOUR_CLIENT_SECRET', // クライアントシークレットを設定してください
+        refresh_token: refreshToken,
+        grant_type: 'refresh_token',
+      }).toString(),
+    });
+
+    if (!response.ok) {
+      throw new Error('アクセストークンのリフレッシュに失敗しました');
+    }
+
+    const data = await response.json();
+    console.log('新しいアクセストークンを取得しました:', data.access_token);
+    return data.access_token;
+  } catch (error) {
+    console.error('アクセストークンのリフレッシュ中にエラーが発生しました:', error);
+    throw error;
+  }
+}
+
 function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -400,7 +428,7 @@ function App() {
           window.removeEventListener('message', handleMessage);
           const folderId = event.data.folderId;
           const folderName = event.data.folderName;
-          const accessToken = event.data.accessToken; // トークンを受け取る
+          let accessToken = event.data.accessToken; // トークンを受け取る
 
           // ユーザー情報を取得してログ出力
           const userInfoResponse = await fetch(
@@ -422,24 +450,18 @@ function App() {
             // 既にトークンを受け取っているので再利用
             // let accessToken = event.data.accessToken; // 先ほど受け取ったトークンを使用
             
-            if (!accessToken) {
-              // トークンが無い場合は、再度APIを呼ぶ
-              // Supabase Edge Functionで取得するように修正
-              const code = new URLSearchParams(authWindow?.location.search).get('code');
-              if (!code) throw new Error('認証コードが見つかりません');
-              
-              const tokenResponse = await fetch('https://sgyfhkqbybvljnvripgs.supabase.co/functions/v1/google-auth-token', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ code })
-              });
-              
-              if (!tokenResponse.ok) throw new Error('トークンの取得に失敗しました');
-              
-              const tokenData = await tokenResponse.json();
-              accessToken = tokenData.access_token;
+            try {
+              // API呼び出しの前にアクセストークンをリフレッシュ
+              const refreshToken = localStorage.getItem('refreshToken');
+              if (refreshToken) {
+                accessToken = await refreshAccessToken(refreshToken);
+              }
+            } catch (error) {
+              console.error('アクセストークンのリフレッシュに失敗しました:', error);
+              alert('アクセストークンのリフレッシュに失敗しました。再ログインしてください。');
+              return;
             }
-            
+
             // フォルダ内のファイル一覧を取得
             const response = await fetch(
               `https://www.googleapis.com/drive/v3/files?q='${folderId}'+in+parents+and+mimeType+contains+'image/'&fields=files(id,name,parents,mimeType)&supportsAllDrives=true&includeItemsFromAllDrives=true`,
