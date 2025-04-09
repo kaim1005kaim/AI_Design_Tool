@@ -455,6 +455,12 @@ function App() {
   };
 
   const loadImagesFromGoogleDrive = async () => {
+    // 認証の前にローカルストレージをクリア
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('accessTokenExpiry');
+    localStorage.removeItem('refreshToken');
+    console.log('ローカルストレージのトークンをクリアしました');
+    
     setIsLoading(true);
     try {
       const accessToken = await getValidAccessToken(); // 有効なアクセストークンを取得
@@ -465,24 +471,22 @@ function App() {
       const redirectUri = 'https://ai-design-tool.netlify.app/auth-callback.html';
       const scope = 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.metadata.readonly';
       
-      // 認証URLを手動で構築
+      // 認証URLを明示的に構築し、リフレッシュトークンを強制的に要求
       const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+      // 必須パラメータ
       authUrl.searchParams.append('client_id', clientId);
       authUrl.searchParams.append('redirect_uri', redirectUri);
       authUrl.searchParams.append('response_type', 'code');
       authUrl.searchParams.append('scope', scope);
+      // リフレッシュトークン取得用の追加パラメータ
       authUrl.searchParams.append('access_type', 'offline');
+      // 毎回同意画面を表示させるためのパラメータ
       authUrl.searchParams.append('prompt', 'consent');
+      // Googleドライブの共有ドライブアクセスを確実に許可する
+      authUrl.searchParams.append('include_granted_scopes', 'true');
       
       // デバッグ情報をコンソールに表示
-      console.log('認証URLのパラメータ:', {
-        client_id: clientId,
-        redirect_uri: redirectUri,
-        response_type: 'code',
-        scope,
-        access_type: 'offline',
-        prompt: 'consent'
-      });
+      console.log('認証URLの全パラメータ:', authUrl.toString());
 
       console.log('Opening auth window with URL:', authUrl.toString());
       
