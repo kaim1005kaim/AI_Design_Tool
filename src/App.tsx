@@ -1,4 +1,48 @@
-/// <reference types="react" />
+};
+
+                const newDesigns: DesignSet[] = [];
+                for (let i = 0; i < files.length; i += 4) {
+                  const groupFiles = files.slice(i, i + 4);
+                  const images = await Promise.all(
+                    groupFiles.map((file) => getImageUrl(file.id, accessToken))
+                  );
+
+                  const validImages = images.filter((img) => img !== null);
+                  if (validImages.length > 0) {
+                    const file = groupFiles[0];
+                    const year = extractYearFromPath(file.name);
+                    const prompt = extractPromptFromPath(file.name);
+
+                    newDesigns.push({
+                      id: `design-${newDesigns.length}`,
+                      year,
+                      prompt,
+                      hashtags: generateTagsFromPrompt(prompt, year),
+                      description: '',
+                      images: validImages,
+                      folderPath: folderId,
+                    });
+                  }
+                }
+
+                console.log('読み込まれたデザイン:', newDesigns);
+                setDesigns(newDesigns);
+                console.log(`${files.length}個の画像ファイルを読み込みました`);
+              } catch (error) {
+                console.error('Google Drive APIエラー:', error);
+                alert(error instanceof Error ? error.message : 'フォルダ内のファイル取得中にエラーが発生しました');
+              }
+            } catch (error) {
+              console.error('Google Drive error:', error);
+              alert(error instanceof Error ? error.message : 'Google Driveからの読み込み中にエラーが発生しました');
+            }
+          } catch (error) {
+            console.error('Google Drive error:', error);
+            alert(error instanceof Error ? error.message : 'Google Driveからの読み込み中にエラーが発生しました');
+          } finally {
+            setIsLoading(false);
+          }
+        }/// <reference types="react" />
 import React, { useState, useEffect, useMemo } from 'react';
 import { Search, Grid2X2, List, FolderOpen, RefreshCw, Plus, X, Save, Image as ImageIcon, FolderSearch } from 'lucide-react';
 
@@ -380,6 +424,225 @@ async function getValidAccessToken(): Promise<string> {
   return await refreshAccessToken(refreshToken);
 }
 
+const loadImagesFromGoogleDrive = async () => {
+  setIsLoading(true);
+  try {
+    // 環境変数を明示的に取得
+    const clientId = import.meta.env.VITE_CLIENT_ID || '322366365562-82svpp13lp2mhradli5ku4uvn6ikbeen.apps.googleusercontent.com';
+    const redirectUri = 'https://ai-design-tool.netlify.app/auth-callback.html';
+    const scope = 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.metadata.readonly';
+
+    // 認証URLを構築
+    const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+    authUrl.searchParams.append('client_id', clientId);
+    authUrl.searchParams.append('redirect_uri', redirectUri);
+    authUrl.searchParams.append('response_type', 'code');
+    authUrl.searchParams.append('scope', scope);
+    authUrl.searchParams.append('access_type', 'offline'); // リフレッシュトークン取得
+    authUrl.searchParams.append('prompt', 'consent'); // 強制的に同意画面を表示
+    authUrl.searchParams.append('include_granted_scopes', 'true'); // 既存のスコープを維持
+
+    console.log('Opening auth window with URL:', authUrl.toString());
+
+    // 認証ウィンドウを開く
+    const authWindow = window.open(
+      authUrl.toString(),
+      'Google OAuth',
+      'width=600,height=800,menubar=no,toolbar=no,location=no,status=no'
+    );
+
+    if (!authWindow) {
+      throw new Error('ポップアップがブロックされました。ポップアップを許可してください。');
+    }
+
+    // フォルダ選択のメッセージイベントハンドラを設定
+    const handleMessage = async (event: MessageEvent) => {
+      if (event.data.type === 'GOOGLE_FOLDER_SELECTED') {
+        clearTimeout(authTimeout);
+        window.removeEventListener('message', handleMessage);
+        const folderId = event.data.folderId;
+        const folderName = event.data.folderName;
+        let accessToken = event.data.accessToken; // アクセストークンを受け取る
+        const refreshToken = event.data.refreshToken; // リフレッシュトークンを受け取る
+        
+        console.log('受信したトークン情報:', {
+          hasAccessToken: !!accessToken,
+          hasRefreshToken: !!refreshToken,
+          folderInfo: `${folderName} (${folderId})`,
+        });
+        
+        // リフレッシュトークンをローカルストレージに保存
+        if (refreshToken) {
+          try {
+            console.log('リフレッシュトークンを保存します:', refreshToken.substring(0, 10) + '...');
+            
+            // 先にストレージをクリア
+            localStorage.removeItem('refreshToken');
+            
+            // リフレッシュトークンを保存
+            localStorage.setItem('refreshToken', refreshToken);
+            
+            // 保存の確認
+            const savedToken = localStorage.getItem('refreshToken');
+            if (savedToken) {
+              console.log('リフレッシュトークンが正常に保存されました');
+            } else {
+              console.error('リフレッシュトークンの保存確認に失敗しました');
+            }
+            
+            // アクセストークンも保存
+            if (accessToken) {
+              const expiresIn = 3600; // デフォルトは1時間
+              localStorage.setItem('accessToken', accessToken);
+              localStorage.setItem('accessTokenExpiry', (Date.now() + expiresIn * 1000).toString());
+              console.log('アクセストークンも保存しました');
+            }
+          } catch (error) {
+            console.error('リフレッシュトークンの保存中にエラーが発生しました:', error);
+          }
+        } else {
+          console.warn('リフレッシュトークンが受け取れませんでした。認証プロセスに問題がある可能性があります。');
+        }
+
+        // ユーザー情報を取得してログ出力
+        const userInfoResponse = await fetch(
+          'https://www.googleapis.com/oauth2/v2/userinfo',
+          { headers: { Authorization: `Bearer ${accessToken}` } }
+        );
+        const userInfo = await userInfoResponse.json();
+        console.log('ユーザー情報:', userInfo);
+
+        // 共有ドライブの一覧を取得
+        const sharedDrives = await getSharedDrives(accessToken);
+        console.log('利用可能な共有ドライブ:', sharedDrives);
+        
+        console.log(`フォルダが選択されました: ${folderName}（ID: ${folderId}）`);
+        setCurrentFolder(`Google Drive: ${folderName}`);
+        
+        // 選択されたフォルダ内の画像を取得するAPIを呼び出す
+        try {
+          // 既にトークンを受け取っているので再利用
+          // let accessToken = event.data.accessToken; // 先ほど受け取ったトークンを使用
+          
+          try {
+            // API呼び出しの前にアクセストークンをリフレッシュ
+            const refreshToken = localStorage.getItem('refreshToken');
+            if (refreshToken) {
+              accessToken = await refreshAccessToken(refreshToken);
+            }
+          } catch (error) {
+            console.error('アクセストークンのリフレッシュに失敗しました:', error);
+            alert('アクセストークンのリフレッシュに失敗しました。再ログインしてください。');
+            return;
+          }
+
+          // フォルダ内のファイル一覧を取得
+          const response = await fetch(
+            `https://www.googleapis.com/drive/v3/files?q='${folderId}'+in+parents+and+mimeType+contains+'image/'&fields=files(id,name,parents,mimeType)&supportsAllDrives=true&includeItemsFromAllDrives=true`,
+            { headers: { Authorization: `Bearer ${accessToken}` } }
+          );
+          
+          if (!response.ok) throw new Error('ファイル一覧の取得に失敗しました');
+          
+          const data = await response.json();
+          const files = data.files || [];
+          
+          if (files.length === 0) {
+            alert('選択したフォルダ内に画像ファイルが見つかりませんでした');
+            setIsLoading(false);
+            return;
+          }
+          
+          const getImageUrl = async (fileId: string, accessToken: string) => {
+            try {
+              // ファイルの詳細情報を取得
+              const response = await fetch(
+                `https://www.googleapis.com/drive/v3/files/${fileId}?fields=thumbnailLink,webContentLink,webViewLink`,
+                { 
+                  headers: { 
+                    Authorization: `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json'
+                  } 
+                }
+              );
+          
+              if (!response.ok) {
+                throw new Error('サムネイル情報の取得に失敗しました');
+              }
+          
+              const fileInfo = await response.json();
+              
+              // サムネイルリンクや代替リンクを優先的に使用
+              return fileInfo.thumbnailLink || 
+                     fileInfo.webContentLink || 
+                     fileInfo.webViewLink || 
+                     `https://drive.google.com/uc?id=${fileId}`;
+            } catch (error) {
+              console.error('画像URL取得エラー:', error);
+              // Fallback to a placeholder image URL
+              return 'https://via.placeholder.com/200?text=Image+Unavailable';
+            }
+          };
+
+          const newDesigns: DesignSet[] = [];
+          for (let i = 0; i < files.length; i += 4) {
+            const groupFiles = files.slice(i, i + 4);
+            const images = await Promise.all(
+              groupFiles.map((file) => getImageUrl(file.id, accessToken))
+            );
+
+            const validImages = images.filter((img) => img !== null);
+            if (validImages.length > 0) {
+              const file = groupFiles[0];
+              const year = extractYearFromPath(file.name);
+              const prompt = extractPromptFromPath(file.name);
+
+              newDesigns.push({
+                id: `design-${newDesigns.length}`,
+                year,
+                prompt,
+                hashtags: generateTagsFromPrompt(prompt, year),
+                description: '',
+                images: validImages,
+                folderPath: folderId,
+              });
+            }
+          }
+
+          console.log('読み込まれたデザイン:', newDesigns);
+          setDesigns(newDesigns);
+          console.log(`${files.length}個の画像ファイルを読み込みました`);
+        } catch (error) {
+          console.error('Google Drive APIエラー:', error);
+          alert(error instanceof Error ? error.message : 'フォルダ内のファイル取得中にエラーが発生しました');
+        }
+      } else if (event?.data?.type === 'GOOGLE_FOLDER_CANCELED') {
+        window.removeEventListener('message', handleMessage);
+        console.log('フォルダ選択がキャンセルされました');
+      } else if (event?.data?.type === 'GOOGLE_AUTH_ERROR') {
+        window.removeEventListener('message', handleMessage);
+        console.error('認証エラー:', event?.data?.error);
+        alert(`認証エラー: ${event?.data?.error}`);
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+
+    // Add a timeout to handle cases where the user closes the auth window
+    const authTimeout = setTimeout(() => {
+      if (authWindow && !authWindow.closed) {
+        authWindow.close();
+        alert('認証がタイムアウトしました。もう一度お試しください。');
+      }
+    }, 60000); // Timeout after 60 seconds
+  } catch (error) {
+    console.error('Google Drive error:', error);
+    alert(error instanceof Error ? error.message : 'Google Driveからの読み込み中にエラーが発生しました');
+  } finally {
+    setIsLoading(false);
+  }
+};
+
 function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -398,180 +661,6 @@ function App() {
   
     // Supabase認証情報をローカルストレージに保存
     const supabaseUrl = (import.meta as any).env.VITE_SUPABASE_URL;
-    const supabaseAnonKey = (import.meta as any).env.VITE_SUPABASE_ANON_KEY;
-    
-    localStorage.setItem('supabaseUrl', supabaseUrl);
-    localStorage.setItem('supabaseAnonKey', supabaseAnonKey);
-  }, []);
-  useEffect(() => {
-    try {
-      localStorage.setItem('designs', JSON.stringify(designs));
-    } catch (error) {
-      console.error('Error serializing designs:', error);
-    }
-  }, [designs]);
-  const years = ['全年代', ...Array.from(new Set(designs.map(design => {
-    const year = parseInt(design.year);
-    if (isNaN(year) || !/^\d{4}s?$/.test(design.year)) return '不明';
-    const decade = Math.floor(year / 10) * 10;
-    return `${decade}年代`;
-  }))).sort((a, b) => a.localeCompare(b))];
-  // 共有ドライブの一覧を取得するメソッド
-  const getSharedDrives = async (accessToken: string) => {
-    try {
-      const response = await fetch(
-        'https://www.googleapis.com/drive/v3/drives?q=name="AI_Design_Images"&fields=drives(id,name,capabilities)', 
-        { 
-          headers: { 
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json'
-          } 
-        }
-      );
-      
-      if (!response.ok) {
-        throw new Error(`共有ドライブ取得エラー: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      console.log('AI_Design_Images共有ドライブ検索結果:', data.drives);
-      
-      if (data.drives && data.drives.length > 0) {
-        const targetDrive = data.drives[0];
-        console.log('見つかった共有ドライブ:', {
-          id: targetDrive.id,
-          name: targetDrive.name,
-          capabilities: targetDrive.capabilities
-        });
-        return targetDrive;
-      } else {
-        console.log('指定の名前の共有ドライブが見つかりませんでした');
-        return null;
-      }
-    } catch (error) {
-      console.error('共有ドライブ取得中のエラー:', error);
-      return null;
-    }
-  };
-
-  const loadImagesFromGoogleDrive = async () => {
-    // 認証の前にローカルストレージをクリア
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('accessTokenExpiry');
-    localStorage.removeItem('refreshToken');
-    console.log('ローカルストレージのトークンをクリアしました');
-    
-    setIsLoading(true);
-    try {
-      const accessToken = await getValidAccessToken(); // 有効なアクセストークンを取得
-      console.log('Starting Google Drive authentication directly...');
-      
-      // Google APIのクライアントID
-      const clientId = '322366365562-82svpp13lp2mhradli5ku4uvn6ikbeen.apps.googleusercontent.com';
-      const redirectUri = 'https://ai-design-tool.netlify.app/auth-callback.html';
-      const scope = 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.metadata.readonly';
-      
-      // 認証URLを明示的に構築し、リフレッシュトークンを強制的に要求
-      const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-      // 必須パラメータ
-      authUrl.searchParams.append('client_id', clientId);
-      authUrl.searchParams.append('redirect_uri', redirectUri);
-      authUrl.searchParams.append('response_type', 'code');
-      authUrl.searchParams.append('scope', scope);
-      // リフレッシュトークン取得用の追加パラメータ
-      authUrl.searchParams.append('access_type', 'offline');
-      // 毎回同意画面を表示させるためのパラメータ
-      authUrl.searchParams.append('prompt', 'consent');
-      // Googleドライブの共有ドライブアクセスを確実に許可する
-      authUrl.searchParams.append('include_granted_scopes', 'true');
-      
-      // デバッグ情報をコンソールに表示
-      console.log('認証URLの全パラメータ:', authUrl.toString());
-
-      console.log('Opening auth window with URL:', authUrl.toString());
-      
-      // 認証ウィンドウを開く
-      const authWindow = window.open(
-        authUrl.toString(),
-        'Google OAuth',
-        'width=600,height=800,menubar=no,toolbar=no,location=no,status=no'
-      );
-      
-      if (!authWindow) {
-        throw new Error('ポップアップがブロックされました。ポップアップを許可してください。');
-      }
-
-      // フォルダ選択のメッセージイベントハンドラを設定
-      const handleMessage = async (event: MessageEvent) => {
-        if (event.data.type === 'GOOGLE_FOLDER_SELECTED') {
-          clearTimeout(authTimeout);
-          window.removeEventListener('message', handleMessage);
-          const folderId = event.data.folderId;
-          const folderName = event.data.folderName;
-          let accessToken = event.data.accessToken; // アクセストークンを受け取る
-          const refreshToken = event.data.refreshToken; // リフレッシュトークンを受け取る
-          
-          // リフレッシュトークンをローカルストレージに保存
-          if (refreshToken) {
-            console.log('リフレッシュトークンを保存します:', refreshToken.substring(0, 10) + '...');
-            
-            try {
-              localStorage.setItem('refreshToken', refreshToken);
-              
-              // 保存の確認
-              const savedToken = localStorage.getItem('refreshToken');
-              if (savedToken) {
-                console.log('リフレッシュトークンが正常に保存されました');
-              } else {
-                console.error('リフレッシュトークンの保存確認に失敗しました');
-              }
-            } catch (error) {
-              console.error('リフレッシュトークンの保存中にエラーが発生しました:', error);
-            }
-          } else {
-            console.warn('リフレッシュトークンが受け取れませんでした');
-          }
-
-          // ユーザー情報を取得してログ出力
-          const userInfoResponse = await fetch(
-            'https://www.googleapis.com/oauth2/v2/userinfo',
-            { headers: { Authorization: `Bearer ${accessToken}` } }
-          );
-          const userInfo = await userInfoResponse.json();
-          console.log('ユーザー情報:', userInfo);
-
-          // 共有ドライブの一覧を取得
-          const sharedDrives = await getSharedDrives(accessToken);
-          console.log('利用可能な共有ドライブ:', sharedDrives);
-          
-          console.log(`フォルダが選択されました: ${folderName}（ID: ${folderId}）`);
-          setCurrentFolder(`Google Drive: ${folderName}`);
-          
-          // 選択されたフォルダ内の画像を取得するAPIを呼び出す
-          try {
-            // 既にトークンを受け取っているので再利用
-            // let accessToken = event.data.accessToken; // 先ほど受け取ったトークンを使用
-            
-            try {
-              // API呼び出しの前にアクセストークンをリフレッシュ
-              const refreshToken = localStorage.getItem('refreshToken');
-              if (refreshToken) {
-                accessToken = await refreshAccessToken(refreshToken);
-              }
-            } catch (error) {
-              console.error('アクセストークンのリフレッシュに失敗しました:', error);
-              alert('アクセストークンのリフレッシュに失敗しました。再ログインしてください。');
-              return;
-            }
-
-            // フォルダ内のファイル一覧を取得
-            const response = await fetch(
-              `https://www.googleapis.com/drive/v3/files?q='${folderId}'+in+parents+and+mimeType+contains+'image/'&fields=files(id,name,parents,mimeType)&supportsAllDrives=true&includeItemsFromAllDrives=true`,
-              { headers: { Authorization: `Bearer ${accessToken}` } }
-            );
-            
-            if (!response.ok) throw new Error('ファイル一覧の取得に失敗しました');
-            
             const data = await response.json();
             const files = data.files || [];
             
