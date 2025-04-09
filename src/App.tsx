@@ -610,6 +610,13 @@ function App() {
   const [selectedDesign, setSelectedDesign] = useState<DesignSet | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
+  // Define the years variable
+  const years = useMemo(() => {
+    const allYears = designs.map((design) => design.year);
+    const uniqueYears = Array.from(new Set(allYears)).filter((year) => year !== '不明');
+    return ['全年代', ...uniqueYears.sort()];
+  }, [designs]);
+
   useEffect(() => {
     const savedDesigns = localStorage.getItem('designs');
     if (savedDesigns) {
