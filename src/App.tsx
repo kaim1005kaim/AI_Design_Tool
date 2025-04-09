@@ -447,8 +447,8 @@ function App() {
         `&redirect_uri=${encodeURIComponent(redirectUri)}` +
         `&response_type=code` +
         `&scope=${encodeURIComponent(scope)}` +
-        `&access_type=offline` +
-        `&prompt=consent`; // prompt=consent を追加
+        `&access_type=offline` + // リフレッシュトークンを取得するために追加
+        `&prompt=consent`; // ユーザーに再度同意を求めるために追加
       
       console.log('Opening auth window with URL:', authUrl);
       
