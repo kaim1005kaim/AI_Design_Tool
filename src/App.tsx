@@ -531,6 +531,7 @@ const loadImagesFromGoogleDrive = async () => {
               // サムネイルリンクや代替リンクを優先的に使用
               return fileInfo.thumbnailLink || 
                      fileInfo.webContentLink || 
+                     fileInfo.webContentLink || 
                      fileInfo.webViewLink || 
                      `https://drive.google.com/uc?id=${fileId}`;
             } catch (error) {
@@ -617,104 +618,10 @@ function App() {
   
     // Supabase認証情報をローカルストレージに保存
     const supabaseUrl = (import.meta as any).env.VITE_SUPABASE_URL;
-            const data = await response.json();
-            const files = data.files || [];
-            
-            if (files.length === 0) {
-              alert('選択したフォルダ内に画像ファイルが見つかりませんでした');
-              setIsLoading(false);
-              return;
-            }
-            
-            const getImageUrl = async (fileId: string, accessToken: string) => {
-              try {
-                // ファイルの詳細情報を取得
-                const response = await fetch(
-                  `https://www.googleapis.com/drive/v3/files/${fileId}?fields=thumbnailLink,webContentLink,webViewLink`,
-                  { 
-                    headers: { 
-                      Authorization: `Bearer ${accessToken}`,
-                      'Content-Type': 'application/json'
-                    } 
-                  }
-                );
-            
-                if (!response.ok) {
-                  throw new Error('サムネイル情報の取得に失敗しました');
-                }
-            
-                const fileInfo = await response.json();
-                
-                // サムネイルリンクや代替リンクを優先的に使用
-                return fileInfo.thumbnailLink || 
-                       fileInfo.webContentLink || 
-                       fileInfo.webViewLink || 
-                       `https://drive.google.com/uc?id=${fileId}`;
-              } catch (error) {
-                console.error('画像URL取得エラー:', error);
-                // Fallback to a placeholder image URL
-                return 'https://via.placeholder.com/200?text=Image+Unavailable';
-              }
-            };
-
-            const newDesigns: DesignSet[] = [];
-            for (let i = 0; i < files.length; i += 4) {
-              const groupFiles = files.slice(i, i + 4);
-              const images = await Promise.all(
-                groupFiles.map((file) => getImageUrl(file.id, accessToken))
-              );
-
-              const validImages = images.filter((img) => img !== null);
-              if (validImages.length > 0) {
-                const file = groupFiles[0];
-                const year = extractYearFromPath(file.name);
-                const prompt = extractPromptFromPath(file.name);
-
-                newDesigns.push({
-                  id: `design-${newDesigns.length}`,
-                  year,
-                  prompt,
-                  hashtags: generateTagsFromPrompt(prompt, year),
-                  description: '',
-                  images: validImages,
-                  folderPath: folderId,
-                });
-              }
-            }
-
-            console.log('読み込まれたデザイン:', newDesigns);
-            setDesigns(newDesigns);
-            console.log(`${files.length}個の画像ファイルを読み込みました`);
-          } catch (error) {
-            console.error('Google Drive APIエラー:', error);
-            alert(error instanceof Error ? error.message : 'フォルダ内のファイル取得中にエラーが発生しました');
-          }
-        } else if (event?.data?.type === 'GOOGLE_FOLDER_CANCELED') {
-          window.removeEventListener('message', handleMessage);
-          console.log('フォルダ選択がキャンセルされました');
-        } else if (event?.data?.type === 'GOOGLE_AUTH_ERROR') {
-          window.removeEventListener('message', handleMessage);
-          console.error('認証エラー:', event?.data?.error);
-          alert(`認証エラー: ${event?.data?.error}`);
-        }
-      };
-
-      window.addEventListener('message', handleMessage);
-
-      // Add a timeout to handle cases where the user closes the auth window
-      const authTimeout = setTimeout(() => {
-        if (authWindow && !authWindow.closed) {
-          authWindow.close();
-          alert('認証がタイムアウトしました。もう一度お試しください。');
-        }
-      }, 60000); // Timeout after 60 seconds
-    } catch (error) {
-      console.error('Google Drive error:', error);
-      alert(error instanceof Error ? error.message : 'Google Driveからの読み込み中にエラーが発生しました');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    const supabaseAnonKey = (import.meta as any).env.VITE_SUPABASE_ANON_KEY;
+    localStorage.setItem('supabaseUrl', supabaseUrl);
+    localStorage.setItem('supabaseAnonKey', supabaseAnonKey);
+  }, []);
 
   const loadImagesFromFolder = async () => {
     try {
@@ -778,6 +685,7 @@ function App() {
       alert(error instanceof Error ? error.message : 'フォルダの読み込み中にエラーが発生しました。');
     }
   };
+
   const filteredDesigns = useMemo(() => {
     return designs.filter(design => {
       const matchesSearch = design.prompt.toLowerCase().includes(searchTerm.toLowerCase()) ||
