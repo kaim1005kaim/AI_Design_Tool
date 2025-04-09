@@ -470,7 +470,16 @@ function App() {
           window.removeEventListener('message', handleMessage);
           const folderId = event.data.folderId;
           const folderName = event.data.folderName;
-          let accessToken = event.data.accessToken; // トークンを受け取る
+          let accessToken = event.data.accessToken; // アクセストークンを受け取る
+          const refreshToken = event.data.refreshToken; // リフレッシュトークンを受け取る
+          
+          // リフレッシュトークンをローカルストレージに保存
+          if (refreshToken) {
+            console.log('リフレッシュトークンを保存します');
+            localStorage.setItem('refreshToken', refreshToken);
+          } else {
+            console.warn('リフレッシュトークンが受け取れませんでした');
+          }
 
           // ユーザー情報を取得してログ出力
           const userInfoResponse = await fetch(

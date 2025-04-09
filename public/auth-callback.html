@@ -175,10 +175,20 @@
           }
           
           console.log('トークン取得成功');
-          showDebugInfo({ step: 'token_success', token_type: tokenData.token_type });
+          showDebugInfo({ step: 'token_success', token_type: tokenData.token_type, has_refresh_token: !!tokenData.refresh_token });
           
           // グローバル変数に保存（pickerCallback用）
           window.accessToken = tokenData.access_token;
+          
+          // リフレッシュトークンも保存（あれば）
+          if (tokenData.refresh_token) {
+            console.log('リフレッシュトークンも受信しました');
+            window.refreshToken = tokenData.refresh_token;
+            showDebugInfo({ step: 'refresh_token_saved' });
+          } else {
+            console.warn('リフレッシュトークンがレスポンスに含まれていません');
+            showDebugInfo({ step: 'no_refresh_token' });
+          }
           
           return tokenData.access_token;
         } catch (error) {
@@ -256,7 +266,8 @@
             type: 'GOOGLE_FOLDER_SELECTED',
             folderId: folderId,
             folderName: folderName,
-            accessToken: window.accessToken // グローバル変数からトークンを送信
+            accessToken: window.accessToken, // グローバル変数からトークンを送信
+            refreshToken: window.refreshToken // リフレッシュトークンも送信
           }, '*');
 
           statusMessage(`フォルダ "${folderName}" が選択されました`);
