@@ -314,10 +314,17 @@ async function refreshAccessToken(refreshToken: string): Promise<string> {
     }
 
     const data = await response.json();
-    console.log('新しいアクセストークンを取得しました:', data.access_token);
-    console.log('リフレッシュトークン:', data.refresh_token); // デバッグ用ログ
+    console.log('アクセストークンレスポンス:', data); // デバッグ用ログ
 
-    // リフレッシュトークンを保存
+    const expiresIn = data.expires_in || 3600; // デフォルトで1時間（3600秒）
+    try {
+      localStorage.setItem('accessToken', data.access_token);
+      localStorage.setItem('accessTokenExpiry', (Date.now() + expiresIn * 1000).toString());
+      console.log('アクセストークンと有効期限を保存しました');
+    } catch (error) {
+      console.error('アクセストークンの保存中にエラーが発生しました:', error);
+    }
+
     if (data.refresh_token) {
       try {
         localStorage.setItem('refreshToken', data.refresh_token);
@@ -325,10 +332,6 @@ async function refreshAccessToken(refreshToken: string): Promise<string> {
         console.error('リフレッシュトークンの保存中にエラーが発生しました:', error);
       }
     }
-
-    // アクセストークンと有効期限を保存
-    localStorage.setItem('accessToken', data.access_token);
-    localStorage.setItem('accessTokenExpiry', (Date.now() + data.expires_in * 1000).toString());
 
     return data.access_token;
   } catch (error) {
@@ -445,7 +448,7 @@ function App() {
         `&response_type=code` +
         `&scope=${encodeURIComponent(scope)}` +
         `&access_type=offline` +
-        `&prompt=consent`;
+        `&prompt=consent`; // prompt=consent を追加
       
       console.log('Opening auth window with URL:', authUrl);
       
