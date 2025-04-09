@@ -442,19 +442,19 @@ function App() {
       const scope = 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.metadata.readonly';
       
       // 認証URLを手動で構築
-      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
-        `client_id=${encodeURIComponent(clientId)}` +
-        `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-        `&response_type=code` +
-        `&scope=${encodeURIComponent(scope)}` +
-        `&access_type=offline` + // リフレッシュトークンを取得するために追加
-        `&prompt=consent`; // ユーザーに再度同意を求めるために追加
-      
-      console.log('Opening auth window with URL:', authUrl);
+      const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+      authUrl.searchParams.append('client_id', clientId);
+      authUrl.searchParams.append('redirect_uri', redirectUri);
+      authUrl.searchParams.append('response_type', 'code'); // 認証コードフロー
+      authUrl.searchParams.append('scope', scope); // 適切なスコープ設定
+      authUrl.searchParams.append('access_type', 'offline'); // リフレッシュトークン取得
+      authUrl.searchParams.append('prompt', 'consent'); // 再同意要求でリフレッシュトークン再発行を可能に
+
+      console.log('Opening auth window with URL:', authUrl.toString());
       
       // 認証ウィンドウを開く
       const authWindow = window.open(
-        authUrl,
+        authUrl.toString(),
         'Google OAuth',
         'width=600,height=800,menubar=no,toolbar=no,location=no,status=no'
       );
