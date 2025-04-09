@@ -1,48 +1,4 @@
-};
-
-                const newDesigns: DesignSet[] = [];
-                for (let i = 0; i < files.length; i += 4) {
-                  const groupFiles = files.slice(i, i + 4);
-                  const images = await Promise.all(
-                    groupFiles.map((file) => getImageUrl(file.id, accessToken))
-                  );
-
-                  const validImages = images.filter((img) => img !== null);
-                  if (validImages.length > 0) {
-                    const file = groupFiles[0];
-                    const year = extractYearFromPath(file.name);
-                    const prompt = extractPromptFromPath(file.name);
-
-                    newDesigns.push({
-                      id: `design-${newDesigns.length}`,
-                      year,
-                      prompt,
-                      hashtags: generateTagsFromPrompt(prompt, year),
-                      description: '',
-                      images: validImages,
-                      folderPath: folderId,
-                    });
-                  }
-                }
-
-                console.log('読み込まれたデザイン:', newDesigns);
-                setDesigns(newDesigns);
-                console.log(`${files.length}個の画像ファイルを読み込みました`);
-              } catch (error) {
-                console.error('Google Drive APIエラー:', error);
-                alert(error instanceof Error ? error.message : 'フォルダ内のファイル取得中にエラーが発生しました');
-              }
-            } catch (error) {
-              console.error('Google Drive error:', error);
-              alert(error instanceof Error ? error.message : 'Google Driveからの読み込み中にエラーが発生しました');
-            }
-          } catch (error) {
-            console.error('Google Drive error:', error);
-            alert(error instanceof Error ? error.message : 'Google Driveからの読み込み中にエラーが発生しました');
-          } finally {
-            setIsLoading(false);
-          }
-        }/// <reference types="react" />
+/// <reference types="react" />
 import React, { useState, useEffect, useMemo } from 'react';
 import { Search, Grid2X2, List, FolderOpen, RefreshCw, Plus, X, Save, Image as ImageIcon, FolderSearch } from 'lucide-react';
 
