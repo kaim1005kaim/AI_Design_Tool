@@ -164,7 +164,20 @@
           let tokenData;
           try {
             tokenData = await tokenResponse.json();
-            showDebugInfo({ step: 'token_parsed', success: true });
+            console.log('Received token data:', {
+              access_token_exists: !!tokenData.access_token,
+              token_type: tokenData.token_type,
+              expires_in: tokenData.expires_in,
+              refresh_token_exists: !!tokenData.refresh_token,
+              scope: tokenData.scope
+            });
+            showDebugInfo({ 
+              step: 'token_parsed', 
+              success: true, 
+              has_refresh: !!tokenData.refresh_token,
+              token_type: tokenData.token_type,
+              expires_in: tokenData.expires_in
+            });
           } catch (parseError) {
             console.error('レスポンスのJSONパースエラー:', parseError);
             const rawText = await tokenResponse.text();

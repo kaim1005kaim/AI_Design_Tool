@@ -288,10 +288,17 @@ function DesignModal({
 }
 
 async function refreshAccessToken(refreshToken: string): Promise<string> {
+  console.log('リフレッシュトークンを使用してアクセストークンを更新します');
+  console.log('使用するリフレッシュトークン:', refreshToken ? refreshToken.substring(0, 10) + '...' : 'undefined');
+  
   try {
     const clientSecret = import.meta.env.VITE_CLIENT_SECRET; // 環境変数からクライアントシークレットを取得
     if (!clientSecret) {
       throw new Error('クライアントシークレットが設定されていません');
+    }
+    
+    if (!refreshToken) {
+      throw new Error('リフレッシュトークンが空または無効です');
     }
 
     const response = await fetch('https://oauth2.googleapis.com/token', {
@@ -341,19 +348,36 @@ async function refreshAccessToken(refreshToken: string): Promise<string> {
 }
 
 async function getValidAccessToken(): Promise<string> {
+  console.log('有効なアクセストークンを取得します');
+  
+  // ローカルストレージからトークンを確認
   const accessToken = localStorage.getItem('accessToken');
   const expiry = localStorage.getItem('accessTokenExpiry');
-
-  if (accessToken && expiry && Date.now() < parseInt(expiry)) {
-    return accessToken; // 有効期限内のアクセストークンを返す
-  }
-
   const refreshToken = localStorage.getItem('refreshToken');
-  if (!refreshToken) {
-    throw new Error('リフレッシュトークンが見つかりません');
+  
+  console.log('トークン状態:', {
+    hasAccessToken: !!accessToken,
+    hasExpiry: !!expiry,
+    hasRefreshToken: !!refreshToken,
+    currentTime: Date.now(),
+    expiryTime: expiry ? parseInt(expiry) : 'none'
+  });
+
+  // アクセストークンが有効期限内ならそれを使用
+  if (accessToken && expiry && Date.now() < parseInt(expiry)) {
+    console.log('有効期限内のアクセストークンを使用します');
+    return accessToken;
   }
 
-  return await refreshAccessToken(refreshToken); // リフレッシュトークンを使用して新しいアクセストークンを取得
+  // リフレッシュトークンを確認
+  if (!refreshToken) {
+    console.error('リフレッシュトークンが見つかりません');
+    throw new Error('リフレッシュトークンが見つかりません。再度ログインしてください。');
+  }
+
+  // リフレッシュトークンを使用して新しいアクセストークンを取得
+  console.log('リフレッシュトークンを使用して新しいアクセストークンを取得します');
+  return await refreshAccessToken(refreshToken);
 }
 
 function App() {
@@ -445,10 +469,20 @@ function App() {
       const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
       authUrl.searchParams.append('client_id', clientId);
       authUrl.searchParams.append('redirect_uri', redirectUri);
-      authUrl.searchParams.append('response_type', 'code'); // 認証コードフロー
-      authUrl.searchParams.append('scope', scope); // 適切なスコープ設定
-      authUrl.searchParams.append('access_type', 'offline'); // リフレッシュトークン取得
-      authUrl.searchParams.append('prompt', 'consent'); // 再同意要求でリフレッシュトークン再発行を可能に
+      authUrl.searchParams.append('response_type', 'code');
+      authUrl.searchParams.append('scope', scope);
+      authUrl.searchParams.append('access_type', 'offline');
+      authUrl.searchParams.append('prompt', 'consent');
+      
+      // デバッグ情報をコンソールに表示
+      console.log('認証URLのパラメータ:', {
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        response_type: 'code',
+        scope,
+        access_type: 'offline',
+        prompt: 'consent'
+      });
 
       console.log('Opening auth window with URL:', authUrl.toString());
       
@@ -475,8 +509,21 @@ function App() {
           
           // リフレッシュトークンをローカルストレージに保存
           if (refreshToken) {
-            console.log('リフレッシュトークンを保存します');
-            localStorage.setItem('refreshToken', refreshToken);
+            console.log('リフレッシュトークンを保存します:', refreshToken.substring(0, 10) + '...');
+            
+            try {
+              localStorage.setItem('refreshToken', refreshToken);
+              
+              // 保存の確認
+              const savedToken = localStorage.getItem('refreshToken');
+              if (savedToken) {
+                console.log('リフレッシュトークンが正常に保存されました');
+              } else {
+                console.error('リフレッシュトークンの保存確認に失敗しました');
+              }
+            } catch (error) {
+              console.error('リフレッシュトークンの保存中にエラーが発生しました:', error);
+            }
           } else {
             console.warn('リフレッシュトークンが受け取れませんでした');
           }

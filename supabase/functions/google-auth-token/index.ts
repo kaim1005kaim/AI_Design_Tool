@@ -89,18 +89,26 @@ serve(async (req) => {
         code_length: code.length
       });
 
+      // パラメータ準備
+      const tokenParams = {
+        code,
+        client_id: GOOGLE_CLIENT_ID,
+        client_secret: GOOGLE_CLIENT_SECRET,
+        redirect_uri: REDIRECT_URI,
+        grant_type: 'authorization_code',
+        // リフレッシュトークンを明示的に要求
+        access_type: 'offline',
+        prompt: 'consent'
+      };
+      
+      console.log('トークン交換パラメータ:', tokenParams);
+      
       const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: new URLSearchParams({
-          code,
-          client_id: GOOGLE_CLIENT_ID,
-          client_secret: GOOGLE_CLIENT_SECRET,
-          redirect_uri: REDIRECT_URI,
-          grant_type: 'authorization_code'
-        })
+        body: new URLSearchParams(tokenParams)
       });
 
       // レスポンスの処理
